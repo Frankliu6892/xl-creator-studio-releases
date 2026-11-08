@@ -685,14 +685,17 @@
     .teleprompter-card {
       width: min(640px, 100%);
       flex-shrink: 0;
+      max-height: 92px;
       background: var(--bg-panel);
       border: 1px solid var(--border-strong);
       border-radius: 10px;
-      padding: 8px 14px 9px;
+      padding: 6px 12px 7px;
       display: flex;
       flex-direction: column;
       align-items: center;
       position: relative;
+      overflow-y: auto;
+      scrollbar-width: thin;
       box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
     }
 
@@ -4076,11 +4079,14 @@
           ? [...liveFreeLines, liveFreePhrase ? liveFreePhrase : ""].filter(Boolean)
           : lastFreeLines;
         if (displayFreeLines && displayFreeLines.length > 0) {
-          const combinedText = displayFreeLines.join(" ");
+          const previewPhrase = isRunning
+            ? displayFreeLines[displayFreeLines.length - 1]
+            : displayFreeLines[0];
+          const extraCount = Math.max(0, displayFreeLines.length - 1);
           scriptList.innerHTML = `
-            <div class="script-line active" id="prompterEmptyPrompt" style="cursor:pointer;" title="Click to edit auto-generated captions or paste a script">
-              <span class="beat-pill-tag">${isRunning ? "LIVE CAPTION" : "AUTO CAPTION"}</span>
-              ${combinedText}
+            <div class="script-line active" id="prompterEmptyPrompt" style="cursor:pointer;font-size:15px;padding:4px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="Click to edit captions or paste a script">
+              <span class="beat-pill-tag">${isRunning ? "LIVE CAPTION" : `AUTO CAPTION (${displayFreeLines.length} LINES)`}</span>
+              ${previewPhrase}${extraCount > 0 && !isRunning ? ` <span style="color:#94a3b8;font-size:12px;font-weight:500;">(+${extraCount} more — edit in left panel)</span>` : ""}
             </div>
           `;
           operatorScriptList.innerHTML = displayFreeLines
@@ -4247,9 +4253,9 @@
         drawWebcamOverlayCaptions();
         if (scriptList) {
           scriptList.innerHTML = `
-            <div class="script-line active" style="cursor:default;">
+            <div class="script-line active" style="cursor:default;font-size:16px;padding:4px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
               <span class="beat-pill-tag">LIVE CAPTION</span>
-              ${combined || "Listening — speak naturally..."}
+              ${liveFreePhrase || "Listening — speak naturally..."}
             </div>
           `;
         }
@@ -5038,6 +5044,25 @@
       }
     }
 
+    if (navigator.mediaDevices && typeof navigator.mediaDevices.addEventListener === "function") {
+      navigator.mediaDevices.addEventListener("devicechange", async () => {
+        try {
+          const devs = await navigator.mediaDevices.enumerateDevices();
+          const curVTrack = stream ? stream.getVideoTracks()[0] : null;
+          const curATrack = stream ? stream.getAudioTracks()[0] : null;
+          const curVSet = curVTrack && curVTrack.getSettings ? curVTrack.getSettings() : {};
+          const curASet = curATrack && curATrack.getSettings ? curATrack.getSettings() : {};
+          populateDeviceDropdowns(
+            devs,
+            curVTrack ? curVTrack.label : "",
+            curVSet.deviceId || (camSelect ? camSelect.value : ""),
+            curATrack ? curATrack.label : "",
+            curASet.deviceId || (micSelect ? micSelect.value : "")
+          );
+        } catch (e) {}
+      });
+    }
+
     async function connectCameraAndMic(preferredAudioId, preferredVideoId) {
       if (cameraConnectInFlight) {
         return cameraConnectInFlight;
@@ -5110,11 +5135,15 @@
             ensureMediaPipeLoaded().then(() => initSegmenter()).catch(() => {});
 
             const videoInputs = initialDevices.filter((d) => d.kind === "videoinput" && d.deviceId);
-            const physicalCams = videoInputs.filter((d) => !/android|virtual|obs|vcam|link/i.test(d.label || ""));
-            const virtualCams = videoInputs.filter((d) => /android|virtual|obs|vcam|link/i.test(d.label || ""));
+            const dslrCams = videoInputs.filter((d) => /canon|eos|sony|nikon|fuji|panasonic|lumix|cam link|elgato|capture|hdmi|blackmagic/i.test(d.label || ""));
+            const physicalCams = videoInputs.filter((d) => !/android|virtual|obs|vcam|link/i.test(d.label || "") && !dslrCams.includes(d));
+            const virtualCams = videoInputs.filter((d) => /android|virtual|obs|vcam|link/i.test(d.label || "") && !dslrCams.includes(d));
 
             const candidateVideoIds = [];
             if (preferredVideoId) candidateVideoIds.push(preferredVideoId);
+            for (const c of dslrCams) {
+              if (!candidateVideoIds.includes(c.deviceId)) candidateVideoIds.push(c.deviceId);
+            }
             for (const c of physicalCams) {
               if (!candidateVideoIds.includes(c.deviceId)) candidateVideoIds.push(c.deviceId);
             }
