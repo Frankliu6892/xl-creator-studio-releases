@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <radialGradient id="bg1" cx="50%" cy="38%" r="68%">
+      <stop offset="0%" stop-color="#131B2E"/>
+      <stop offset="100%" stop-color="#060911"/>
+    </radialGradient>
+    <linearGradient id="rim1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#25F4EE"/>
+      <stop offset="50%" stop-color="#3B82F6"/>
+      <stop offset="100%" stop-color="#FE2C55"/>
+    </linearGradient>
+    <linearGradient id="pill1" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#FE2C55"/>
+      <stop offset="100%" stop-color="#E11D48"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Outer Cyan & Red 3D Offset Accents -->
+  <rect x="24" y="24" width="452" height="452" rx="104" fill="#25F4EE" opacity="0.92"/>
+  <rect x="36" y="36" width="452" height="452" rx="104" fill="#FE2C55" opacity="0.92"/>
+
+  <!-- Main Obsidian Squircle Body -->
+  <rect x="30" y="30" width="452" height="452" rx="104" fill="url(#bg1)" stroke="url(#rim1)" stroke-width="6"/>
+
+  <!-- Subtle Inner 9:16 Stage Frame -->
+  <rect x="64" y="62" width="384" height="388" rx="76" fill="none" stroke="#1E293B" stroke-width="3" stroke-dasharray="12 10"/>
+
+  <!-- Top-Right Live Tally Indicator (ON AIR) -->
+  <circle cx="404" cy="96" r="14" fill="#FE2C55"/>
+  <circle cx="404" cy="96" r="6" fill="#FFFFFF"/>
+
+  <!-- Top-Left 9:16 Safe-Zone Corner Brackets -->
+  <path d="M 92 118 V 92 H 118" stroke="#25F4EE" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M 420 320 V 346 H 394" stroke="#25F4EE" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Bold Geometric "XL" Monogram with 3D Cyan/Red Chromatic Edge -->
+  <!-- Cyan Left Shift -->
+  <g transform="translate(-5, -4)">
+    <path d="M 96 132 H 152 L 194 198 L 236 132 H 290 L 222 232 L 294 336 H 238 L 194 266 L 150 336 H 94 L 166 232 Z" fill="#25F4EE"/>
+    <path d="M 310 132 H 360 V 292 H 428 V 336 H 310 Z" fill="#25F4EE"/>
+  </g>
+  <!-- Red Right Shift -->
+  <g transform="translate(5, 4)">
+    <path d="M 96 132 H 152 L 194 198 L 236 132 H 290 L 222 232 L 294 336 H 238 L 194 266 L 150 336 H 94 L 166 232 Z" fill="#FE2C55"/>
+    <path d="M 310 132 H 360 V 292 H 428 V 336 H 310 Z" fill="#FE2C55"/>
+  </g>
+  <!-- Pure White Primary "XL" -->
+  <g>
+    <path d="M 96 132 H 152 L 194 198 L 236 132 H 290 L 222 232 L 294 336 H 238 L 194 266 L 150 336 H 94 L 166 232 Z" fill="#FFFFFF"/>
+    <path d="M 310 132 H 360 V 292 H 428 V 336 H 310 Z" fill="#FFFFFF"/>
+  </g>
+
+  <!-- Bottom STUDIO Badge Pill -->
+  <rect x="96" y="364" width="320" height="64" rx="18" fill="url(#pill1)"/>
+  <text x="256" y="407" text-anchor="middle" fill="#FFFFFF" font-family="Poppins,Segoe UI,Arial,sans-serif" font-weight="900" font-size="33" letter-spacing="6">STUDIO</text>
+</svg>

@@ -1,0 +1,7 @@
+node_modules/
+dist/
+takes/
+custom_backgrounds/
+*.log
+.DS_Store
+Thumbs.db

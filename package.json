@@ -1,0 +1,70 @@
+{
+  "name": "xl-creator-studio",
+  "productName": "XL Creator Studio",
+  "version": "1.0.0",
+  "description": "XL Creator Studio — 9:16 Teleprompter, Broadcast Audio Mastering & Short-Form Video Production Suite",
+  "main": "main.js",
+  "author": "XL Exhibit Production LLC",
+  "license": "MIT",
+  "homepage": "https://xlexhibitproduction.com/creator-studio",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Frankliu6892/xl-creator-studio-releases.git"
+  },
+  "scripts": {
+    "start": "electron .",
+    "server": "node server.js",
+    "dist": "electron-builder --win nsis"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9",
+    "ffmpeg-static": "^5.2.0"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.xlexhibitproduction.creatorstudio",
+    "productName": "XL Creator Studio",
+    "icon": "assets/icon.ico",
+    "asar": false,
+    "electronDist": "node_modules/electron/dist",
+    "files": [
+      "main.js",
+      "server.js",
+      "illustration_episodes.js",
+      "render_illustration_video.js",
+      "webcam_practice_recorder.html",
+      "assets/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "menuCategory": "XL Creator Studio",
+      "shortcutName": "XL Creator Studio",
+      "uninstallDisplayName": "Uninstall XL Creator Studio",
+      "deleteAppDataOnUninstall": true,
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "include": "build/installer.nsh"
+    },
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://xlexhibitproduction.com/studio-updates/"
+      }
+    ]
+  }
+}
