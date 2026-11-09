@@ -225,25 +225,72 @@
     }
 
     /* 2. EDGE-TO-EDGE 3-PANE DESKTOP SHELL (WITH DRAGGABLE RESIZERS & MODULAR FLOAT/DOCK PANELS) */
-    .wizard-stepper-bar {
-      width: 100%;
-      height: 36px;
-      background: #0a0c12;
-      border-bottom: 1px solid var(--border-hairline);
-      padding: 0 14px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      user-select: none;
-    }
-
     .wizard-steps-track {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 4px;
+      background: var(--bg-stage);
+      padding: 3px 5px;
+      border-radius: 8px;
+      border: 1px solid var(--border-hairline);
       overflow-x: auto;
       scrollbar-width: none;
+    }
+
+    .view-dropdown-wrap {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+    }
+
+    .view-dropdown-menu {
+      display: none;
+      position: absolute;
+      top: calc(100% + 6px);
+      right: 0;
+      width: 225px;
+      background: #12151f;
+      border: 1px solid rgba(56, 189, 248, 0.45);
+      border-radius: 8px;
+      padding: 6px;
+      box-shadow: 0 18px 42px rgba(0, 0, 0, 0.85);
+      z-index: 200;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .view-dropdown-menu.open {
+      display: flex;
+    }
+
+    .view-menu-section-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      padding: 4px 8px 2px;
+    }
+
+    .view-menu-divider {
+      height: 1px;
+      background: var(--border-hairline);
+      margin: 3px 0;
+    }
+
+    .view-dropdown-menu .btn-popout,
+    .view-dropdown-menu .role-tabs,
+    .view-dropdown-menu .lan-url-pill {
+      width: 100%;
+      justify-content: space-between;
+      text-align: left;
+      display: flex;
+      align-items: center;
+    }
+
+    .view-dropdown-menu .role-tabs .role-tab {
+      flex: 1;
+      text-align: center;
     }
 
     .wizard-step-btn {
@@ -346,7 +393,7 @@
       --left-pane-w: 330px;
       --right-pane-w: 360px;
       width: 100%;
-      height: calc(100vh - 84px);
+      height: calc(100vh - 48px);
       display: grid;
       grid-template-columns: var(--left-pane-w) 1fr var(--right-pane-w);
       overflow: hidden;
@@ -818,7 +865,7 @@
     .preview-frame {
       position: relative;
       height: 100%;
-      max-height: calc(100vh - 235px);
+      max-height: calc(100vh - 195px);
       aspect-ratio: 9 / 16;
       background: #0b0e14;
       border: 1px solid var(--border-strong);
@@ -1479,98 +1526,95 @@
 </head>
 <body data-role="director">
 
-  <!-- 1. FULL-BLEED STUDIO HEADER BAR -->
+  <!-- 1. UNIFIED 1-ROW 3-ZONE STUDIO HEADER BAR (48px) -->
   <header class="top-bar">
+    <!-- Left Zone: Brand + Source -->
     <div class="header-left">
       <div style="display:inline-flex;align-items:center;gap:7px;padding-right:4px;">
         <img src="/icon.svg" alt="XL Creator Studio" width="24" height="24" style="display:block;border-radius:5px;" />
         <span style="font-size:12.5px;font-weight:800;letter-spacing:0.02em;color:#f8fafc;white-space:nowrap;">XL Creator Studio</span>
-      </div>
-      <div class="role-tabs">
-        <button id="tabDirector" class="role-tab active">Studio</button>
-        <button id="tabTalent" class="role-tab">Minimal</button>
       </div>
 
       <select id="visualFormatSelect" class="top-select" title="Switch between On-Camera Webcam or 2D Illustration">
         <option value="illustration">2D Illustration</option>
         <option value="webcam" selected>On-Camera Webcam</option>
       </select>
-
-      <button id="headerEditScriptBtn" type="button" class="btn-popout" title="Write or paste a custom teleprompter script">
-        Write / Paste Script
-      </button>
       <select id="episodeSelect" style="display:none;"></select>
     </div>
 
-    <div class="header-center">
-      <div id="tallyBox" class="tally-status">
+    <!-- Center Zone: 4-Step Guided Workflow Tabs -->
+    <nav id="wizardStepperBar" class="header-center director-only" aria-label="Studio Setup Steps">
+      <div class="wizard-steps-track">
+        <button type="button" class="wizard-step-btn active" data-wizard-step="1" title="Step 1: Connect your camera & frame your shot">
+          <span class="wizard-step-num">1</span>
+          <span>Camera</span>
+        </button>
+        <span class="wizard-step-arrow">›</span>
+        <button type="button" class="wizard-step-btn" data-wizard-step="2" title="Step 2: Select microphone & run 5s Sound Check (-14 LUFS)">
+          <span class="wizard-step-num">2</span>
+          <span>Sound Check</span>
+        </button>
+        <span class="wizard-step-arrow">›</span>
+        <button type="button" class="wizard-step-btn" data-wizard-step="3" title="Step 3: Choose Free Record or Custom Script">
+          <span class="wizard-step-num">3</span>
+          <span>Script</span>
+        </button>
+        <span class="wizard-step-arrow">›</span>
+        <button type="button" class="wizard-step-btn" data-wizard-step="4" title="Step 4: Record take, adjust Hook Banner & export 1080p MP4">
+          <span class="wizard-step-num">4</span>
+          <span>Export</span>
+        </button>
+      </div>
+    </nav>
+
+    <!-- Right Zone: Live Tally/Timer + Safe Zones + View & Panels Menu -->
+    <div class="sync-actions">
+      <div id="tallyBox" class="tally-status" title="Live Studio Status">
         <span class="tally-dot"></span>
-        <span id="statusPrompt">STANDBY • Free Record Mode</span>
+        <span id="statusPrompt" style="max-width:210px;overflow:hidden;text-overflow:ellipsis;">STANDBY • Free Record Mode</span>
       </div>
       <span id="timerDisplay" class="timer-text">00:00.0 • FREE</span>
-    </div>
 
-    <div class="sync-actions">
-      <button id="toggleLeftDockBtn" type="button" class="btn-popout director-only" title="Show or Hide Left Studio Panel">
-        Left Panel
-      </button>
-      <button id="toggleRightDockBtn" type="button" class="btn-popout director-only" title="Show or Hide Right Studio Panel">
-        Right Panel
-      </button>
       <button id="toggleSafeZonesBtn" class="btn-popout" title="Show/Hide TikTok UI Safe-Zone Guide on 9:16 Preview">
         Safe Zones
       </button>
 
-      <button id="resetLayoutBtn" class="btn-popout" title="Reset all docked, floating, collapsed, and resized workspace panels to default">
-        Reset Layout
-      </button>
+      <div class="view-dropdown-wrap">
+        <button id="viewMenuToggleBtn" type="button" class="btn-popout" title="Workspace panels, layout modes, script editor & software updates">
+          View &amp; Panels ▾
+        </button>
+        <div id="viewDropdownMenu" class="view-dropdown-menu">
+          <div class="view-menu-section-label">View Mode</div>
+          <div class="role-tabs">
+            <button id="tabDirector" class="role-tab active">Studio</button>
+            <button id="tabTalent" class="role-tab">Minimal</button>
+          </div>
 
-      <button id="appUpdateBtn" type="button" class="btn-popout" title="Click to check for XL Creator Studio updates">
-        v1.0.0
-      </button>
+          <div class="view-menu-divider"></div>
+          <div class="view-menu-section-label">Workspace Panels</div>
+          <button type="button" id="toggleWizardModeBtn" class="btn-popout" title="Toggle between step-by-step Guided Wizard and showing all panels at once">All Panels</button>
+          <button id="toggleLeftDockBtn" type="button" class="btn-popout director-only" title="Show or Hide Left Studio Panel">Left Panel</button>
+          <button id="toggleRightDockBtn" type="button" class="btn-popout director-only" title="Show or Hide Right Studio Panel">Right Panel</button>
+          <button id="headerEditScriptBtn" type="button" class="btn-popout" title="Write or paste a custom teleprompter script">Write / Paste Script</button>
+          <button id="resetLayoutBtn" class="btn-popout" title="Reset all docked, floating, collapsed, and resized workspace panels to default">Reset Layout</button>
 
-      <span id="lanUrlPill" class="lan-url-pill" data-url="http://127.0.0.1:3100/?role=director" title="Click to copy Studio URL">
-        localhost:3100
-      </span>
+          <div class="view-menu-divider"></div>
+          <div class="view-menu-section-label">System &amp; Network</div>
+          <button id="appUpdateBtn" type="button" class="btn-popout" title="Click to check for XL Creator Studio updates • Right-click to uninstall">v1.0.1</button>
+          <span id="lanUrlPill" class="lan-url-pill" data-url="http://127.0.0.1:3100/?role=director" title="Click to copy Studio URL">localhost:3100</span>
+        </div>
+      </div>
 
-      <!-- Hidden compatibility buttons so keyboard/modal hooks remain intact without cluttering header -->
+      <!-- Hidden compatibility buttons so keyboard/modal/wizard hooks remain intact -->
       <div style="display:none;">
+        <button type="button" id="wizardPrevBtn">Back</button>
+        <button type="button" id="wizardNextBtn">Next</button>
         <button id="freeRecordToggleBtn" type="button">Free Record: OFF</button>
         <button id="topCaptionsToggleBtn" type="button">Captions: ON</button>
         <button id="openScriptEditorBtn" type="button">Edit Script</button>
       </div>
     </div>
   </header>
-
-  <!-- 1B. 4-STEP GUIDED STUDIO SETUP WIZARD BAR -->
-  <nav id="wizardStepperBar" class="wizard-stepper-bar director-only" aria-label="Studio Setup Steps">
-    <div class="wizard-steps-track">
-      <button type="button" class="wizard-step-btn active" data-wizard-step="1" title="Step 1: Connect your camera & frame your shot">
-        <span class="wizard-step-num">1</span>
-        <span>Camera &amp; Framing</span>
-      </button>
-      <span class="wizard-step-arrow">›</span>
-      <button type="button" class="wizard-step-btn" data-wizard-step="2" title="Step 2: Select microphone & run 5s Sound Check (-14 LUFS)">
-        <span class="wizard-step-num">2</span>
-        <span>5s Sound Check</span>
-      </button>
-      <span class="wizard-step-arrow">›</span>
-      <button type="button" class="wizard-step-btn" data-wizard-step="3" title="Step 3: Choose Free Record or Custom Script">
-        <span class="wizard-step-num">3</span>
-        <span>Mode &amp; Script</span>
-      </button>
-      <span class="wizard-step-arrow">›</span>
-      <button type="button" class="wizard-step-btn" data-wizard-step="4" title="Step 4: Record take, adjust Hook Banner & export 1080p MP4">
-        <span class="wizard-step-num">4</span>
-        <span>Record &amp; Export</span>
-      </button>
-    </div>
-    <div class="wizard-step-actions">
-      <button type="button" id="wizardPrevBtn" class="btn-popout" style="padding:3px 9px;font-size:11px;" disabled>Back</button>
-      <button type="button" id="wizardNextBtn" class="btn-popout" style="padding:3px 11px;font-size:11px;background:#2563eb;border-color:#3b82f6;color:#ffffff;">Next: Sound Check</button>
-      <button type="button" id="toggleWizardModeBtn" class="btn-popout" style="padding:3px 9px;font-size:11px;" title="Toggle between step-by-step Guided Wizard and showing all panels at once">All Panels</button>
-    </div>
-  </nav>
 
   <!-- BULK SCRIPT & CAPTION EDITOR MODAL -->
   <div id="scriptEditorModal" style="display:none;position:fixed;inset:0;background:rgba(5,7,11,0.88);z-index:110;align-items:center;justify-content:center;padding:16px;">
@@ -1704,6 +1748,9 @@
           </div>
           <select id="audioPresetSelect">
             <option value="auto" selected>Auto-Calibrated Master (-14 LUFS)</option>
+            <option value="de_echo">Echo &amp; Hard-Wall Rescue (De-Reverb + Anti-Ring)</option>
+            <option value="cheap_mic">$13 Wireless / Earbud Rescue (De-Clip + Warmth + De-Fizz)</option>
+            <option value="far_mic">Laptop / Distant Mic Rescue (2–3ft Dialogue Boost + NR)</option>
             <option value="studio">Crisp Studio (-4dB Mud + De-Ess)</option>
             <option value="crisp">Extra Bright (+4dB Air + De-Ess)</option>
             <option value="warm">Warm Broadcast (-3dB Mud)</option>
@@ -1729,7 +1776,10 @@
               Floor -54dB • RMS -20.2dB • Peak -1.0dBTP
             </div>
             <div id="scEqLine" style="font-size:9.5px;color:#94a3b8;font-family:'JetBrains Mono',monospace;line-height:1.3;">
-              NR -12dB • Mud -3.8dB • Box -3.6dB • Pres +3.4dB • De-Ess -3.2dB
+              NR -12dB • De-Echo Gate • 390Hz Notch • Pres +3.4dB • De-Ess -3.2dB
+            </div>
+            <div id="scTipLine" style="font-size:9.5px;color:#7dd3fc;line-height:1.3;">
+              Balanced Room • De-Reverb Expander &amp; Anti-Resonance Active
             </div>
           </div>
         </div>
@@ -2376,6 +2426,7 @@
     let hpFilter = null;
     let mudFilter = null;
     let echoFilter = null;
+    let honkFilter = null;
     let presenceFilter = null;
     let deEssFilter = null;
     let airFilter = null;
@@ -2404,13 +2455,17 @@
       nrAmountDb: 12,
       mudCutDb: -3.8,
       boxCutDb: -3.6,
-      honkCutDb: -2.2,
+      honkCutDb: -2.4,
+      roomResonanceHz: 390,
+      echoTailRatio: 0.22,
       presenceBoostDb: 3.4,
       deEssCutDb: -3.2,
       airBoostDb: 3.2,
       compThresholdDb: -21,
       compRatio: 2.8,
       makeupGainDb: 2.5,
+      acousticDiagnosis: "Balanced Room • De-Reverb Expander & Anti-Resonance Active",
+      acousticTip: "Keep mic 6–8 in from mouth at a 45° angle to minimize plosives.",
       masteredCheckUrl: null
     };
 
@@ -2420,6 +2475,7 @@
     const scLufsReadout = document.getElementById("scLufsReadout");
     const scMetricsLine = document.getElementById("scMetricsLine");
     const scEqLine = document.getElementById("scEqLine");
+    const scTipLine = document.getElementById("scTipLine");
 
     const baseHost = window.location.protocol.startsWith("http") ? "" : "http://127.0.0.1:3100";
 
@@ -2548,11 +2604,17 @@
     }
 
     function updateHookSuggestionsUI(suggestionsArr, selectedHook) {
-      if (selectedHook && hookBannerInput) {
-        hookBannerInput.value = selectedHook;
+      if (typeof selectedHook === "string" && hookBannerInput) {
+        if (selectedHook || !hookModeSelect || hookModeSelect.value === "auto") {
+          hookBannerInput.value = selectedHook;
+        }
       }
       syncLiveHookBannerDOM();
-      if (!hookSuggestionsRow || !Array.isArray(suggestionsArr) || suggestionsArr.length === 0) return;
+      if (!hookSuggestionsRow) return;
+      if (!Array.isArray(suggestionsArr) || suggestionsArr.length === 0) {
+        hookSuggestionsRow.innerHTML = "";
+        return;
+      }
       const curVal = hookBannerInput ? hookBannerInput.value.trim() : "";
       hookSuggestionsRow.innerHTML = suggestionsArr
         .slice(0, 3)
@@ -3579,12 +3641,19 @@
           });
           const data = await res.json();
           if (data && data.ok && data.masteredMp4) {
-            if (data.hookSuggestions) {
-              updateHookSuggestionsUI(data.hookSuggestions, data.generatedHook);
+            lastFreeLines = Array.isArray(data.freeLines) ? data.freeLines : [];
+            if (typeof window.syncInlineCaptionEditor === "function") {
+              window.syncInlineCaptionEditor(lastFreeLines);
             }
+            if (hookBannerInput) {
+              hookBannerInput.value = data.generatedHook || "";
+            }
+            updateHookSuggestionsUI(data.hookSuggestions || [], data.generatedHook || "");
+            renderScript(0, 0);
+            drawWebcamOverlayCaptions();
             setDownloadLinks(data.masteredMp4);
             setMasteringState(false, data.finalDuration);
-            statusPrompt.textContent = `VAULT • Loaded ${chosenFile} • Hook: "${data.generatedHook || ""}"`;
+            statusPrompt.textContent = `VAULT • Loaded ${chosenFile}${data.generatedHook ? ` • Hook: "${data.generatedHook}"` : ""}`;
             if (isReplaying) {
               replayVideo.src = data.masteredMp4;
               replayVideo.play().catch(() => {});
@@ -3598,7 +3667,7 @@
       if (!prof || typeof prof !== "object") return;
       autoAudioProfile = { ...autoAudioProfile, ...prof };
       if (scStatusTitle) {
-        scStatusTitle.textContent = autoAudioProfile.source || "Auto-Calibrated Voice Profile";
+        scStatusTitle.textContent = autoAudioProfile.acousticDiagnosis || autoAudioProfile.source || "Auto-Calibrated Voice Profile";
       }
       if (scLufsReadout) {
         const pre = Number(autoAudioProfile.measuredLufs ?? -15.9).toFixed(1);
@@ -3609,15 +3678,19 @@
         const nf = Math.round(Number(autoAudioProfile.noiseFloorDb ?? -54));
         const rms = Number(autoAudioProfile.speechRmsDb ?? -20.2).toFixed(1);
         const pk = Number(autoAudioProfile.postPeakDb ?? -1.0).toFixed(1);
-        scMetricsLine.textContent = `Floor ${nf}dB • RMS ${rms}dB • Peak ${pk}dBTP`;
+        const echoPct = Math.round(Number(autoAudioProfile.echoTailRatio ?? 0.22) * 100);
+        scMetricsLine.textContent = `Floor ${nf}dB • RMS ${rms}dB • Echo ${echoPct}% • Peak ${pk}dBTP`;
       }
       if (scEqLine) {
         const nr = Number(autoAudioProfile.nrAmountDb ?? 12).toFixed(0);
-        const mud = Number(autoAudioProfile.mudCutDb ?? -3.8).toFixed(1);
+        const ringHz = Math.round(Number(autoAudioProfile.roomResonanceHz ?? 390));
         const box = Number(autoAudioProfile.boxCutDb ?? -3.6).toFixed(1);
         const pres = Number(autoAudioProfile.presenceBoostDb ?? 3.4).toFixed(1);
         const deEss = Number(autoAudioProfile.deEssCutDb ?? -3.2).toFixed(1);
-        scEqLine.textContent = `NR -${nr}dB • Mud ${mud}dB • Box ${box}dB • Pres +${pres}dB • De-Ess ${deEss}dB`;
+        scEqLine.textContent = `NR -${nr}dB • De-Echo Gate • ${ringHz}Hz (${box}dB) • Pres +${pres}dB • De-Ess ${deEss}dB`;
+      }
+      if (scTipLine) {
+        scTipLine.textContent = autoAudioProfile.acousticTip || "Balanced Room • De-Reverb Expander & Anti-Resonance Active";
       }
       if (playSoundCheckBtn && autoAudioProfile.masteredCheckUrl) {
         playSoundCheckBtn.style.display = "inline-flex";
@@ -3809,16 +3882,14 @@
           .split(/\r?\n/)
           .map((s) => s.trim())
           .filter(Boolean);
-        if (editedLines.length > 0) {
-          lastFreeLines = editedLines;
-          try {
-            await fetch(`${baseHost}/update-transcript`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ lines: editedLines })
-            });
-          } catch (e) {}
-        }
+        lastFreeLines = editedLines;
+        try {
+          await fetch(`${baseHost}/update-transcript`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ lines: editedLines })
+          });
+        } catch (e) {}
         inlineCapEl.dataset.userEdited = "0";
       }
       if (remasterBtn) {
@@ -3869,7 +3940,7 @@
           }
         });
         const data = await res.json();
-        if (data && Array.isArray(data.freeLines) && data.freeLines.length > 0) {
+        if (data && Array.isArray(data.freeLines)) {
           lastFreeLines = data.freeLines;
           if (typeof window.syncInlineCaptionEditor === "function") window.syncInlineCaptionEditor(lastFreeLines);
           renderScript(0, 0);
@@ -3877,7 +3948,7 @@
         }
         if (data && data.audioProfile) updateSoundCheckTelemetryUI(data.audioProfile);
         if (data && data.takeHistory) updateTakeHistoryVaultUI(data.takeHistory);
-        if (data && data.hookSuggestions) updateHookSuggestionsUI(data.hookSuggestions, data.generatedHook);
+        if (data && Array.isArray(data.hookSuggestions)) updateHookSuggestionsUI(data.hookSuggestions, data.generatedHook);
         if (data.ok && data.masteredMp4) {
           if (typeof window.markWizardStepDone === "function") window.markWizardStepDone(4);
           setDownloadLinks(data.masteredMp4);
@@ -3948,11 +4019,92 @@
         hpFilter.frequency.value = 20;
         mudFilter.gain.value = 0;
         if (echoFilter) echoFilter.gain.value = 0;
+        if (honkFilter) honkFilter.gain.value = 0;
         presenceFilter.gain.value = 0;
         if (deEssFilter) deEssFilter.gain.value = 0;
         if (airFilter) airFilter.gain.value = 0;
         compressor.threshold.value = 0;
         compressor.ratio.value = 1;
+        gainNode.gain.value = linearGain;
+      } else if (preset === "de_echo") {
+        const ringHz = Number((autoAudioProfile && autoAudioProfile.roomResonanceHz) || 380);
+        hpFilter.frequency.value = 115;
+        mudFilter.frequency.value = 230;
+        mudFilter.gain.value = -5.0;
+        if (echoFilter) {
+          echoFilter.frequency.value = ringHz;
+          echoFilter.Q.value = 2.4;
+          echoFilter.gain.value = -5.6;
+        }
+        if (honkFilter) {
+          honkFilter.frequency.value = 820;
+          honkFilter.gain.value = -3.4;
+        }
+        presenceFilter.frequency.value = 3900;
+        presenceFilter.gain.value = 3.8;
+        if (deEssFilter) {
+          deEssFilter.frequency.value = 6600;
+          deEssFilter.gain.value = -3.6;
+        }
+        if (airFilter) {
+          airFilter.frequency.value = 9200;
+          airFilter.gain.value = 2.8;
+        }
+        compressor.threshold.value = -21;
+        compressor.ratio.value = 2.8;
+        gainNode.gain.value = linearGain;
+      } else if (preset === "cheap_mic") {
+        hpFilter.frequency.value = 85;
+        mudFilter.frequency.value = 175;
+        mudFilter.gain.value = 2.6;
+        if (echoFilter) {
+          echoFilter.frequency.value = 390;
+          echoFilter.Q.value = 1.6;
+          echoFilter.gain.value = -3.2;
+        }
+        if (honkFilter) {
+          honkFilter.frequency.value = 2600;
+          honkFilter.gain.value = -3.8;
+        }
+        presenceFilter.frequency.value = 4100;
+        presenceFilter.gain.value = 2.2;
+        if (deEssFilter) {
+          deEssFilter.frequency.value = 6400;
+          deEssFilter.gain.value = -4.2;
+        }
+        if (airFilter) {
+          airFilter.frequency.value = 10500;
+          airFilter.gain.value = -2.5;
+        }
+        compressor.threshold.value = -21;
+        compressor.ratio.value = 3.0;
+        gainNode.gain.value = linearGain;
+      } else if (preset === "far_mic") {
+        const ringHz = Number((autoAudioProfile && autoAudioProfile.roomResonanceHz) || 400);
+        hpFilter.frequency.value = 110;
+        mudFilter.frequency.value = 185;
+        mudFilter.gain.value = 2.4;
+        if (echoFilter) {
+          echoFilter.frequency.value = ringHz;
+          echoFilter.Q.value = 2.2;
+          echoFilter.gain.value = -4.8;
+        }
+        if (honkFilter) {
+          honkFilter.frequency.value = 850;
+          honkFilter.gain.value = -3.2;
+        }
+        presenceFilter.frequency.value = 3700;
+        presenceFilter.gain.value = 4.4;
+        if (deEssFilter) {
+          deEssFilter.frequency.value = 6600;
+          deEssFilter.gain.value = -3.4;
+        }
+        if (airFilter) {
+          airFilter.frequency.value = 9000;
+          airFilter.gain.value = 3.2;
+        }
+        compressor.threshold.value = -22;
+        compressor.ratio.value = 3.0;
         gainNode.gain.value = linearGain;
       } else if (preset === "warm") {
         hpFilter.frequency.value = 90;
@@ -3960,7 +4112,12 @@
         mudFilter.gain.value = -3.0;
         if (echoFilter) {
           echoFilter.frequency.value = 390;
+          echoFilter.Q.value = 1.5;
           echoFilter.gain.value = -3.2;
+        }
+        if (honkFilter) {
+          honkFilter.frequency.value = 850;
+          honkFilter.gain.value = -1.8;
         }
         presenceFilter.frequency.value = 3800;
         presenceFilter.gain.value = 2.8;
@@ -3981,7 +4138,12 @@
         mudFilter.gain.value = -4.8;
         if (echoFilter) {
           echoFilter.frequency.value = 390;
+          echoFilter.Q.value = 1.5;
           echoFilter.gain.value = -4.5;
+        }
+        if (honkFilter) {
+          honkFilter.frequency.value = 850;
+          honkFilter.gain.value = -2.4;
         }
         presenceFilter.frequency.value = 4100;
         presenceFilter.gain.value = 4.2;
@@ -4002,7 +4164,12 @@
         mudFilter.gain.value = -4.0;
         if (echoFilter) {
           echoFilter.frequency.value = 390;
+          echoFilter.Q.value = 1.6;
           echoFilter.gain.value = -3.8;
+        }
+        if (honkFilter) {
+          honkFilter.frequency.value = 850;
+          honkFilter.gain.value = -2.4;
         }
         presenceFilter.frequency.value = 4000;
         presenceFilter.gain.value = 3.5;
@@ -4024,8 +4191,13 @@
         mudFilter.frequency.value = 235;
         mudFilter.gain.value = Number(p.mudCutDb ?? -3.8);
         if (echoFilter) {
-          echoFilter.frequency.value = 390;
+          echoFilter.frequency.value = Number(p.roomResonanceHz || 390);
+          echoFilter.Q.value = 2.1;
           echoFilter.gain.value = Number(p.boxCutDb ?? -3.6);
+        }
+        if (honkFilter) {
+          honkFilter.frequency.value = 850;
+          honkFilter.gain.value = Number(p.honkCutDb ?? -2.4);
         }
         presenceFilter.frequency.value = 4000;
         presenceFilter.gain.value = Number(p.presenceBoostDb ?? 3.4);
@@ -4559,7 +4731,7 @@
           body: blob || new Blob([])
         });
         const data = await res.json();
-        if (data && Array.isArray(data.freeLines) && data.freeLines.length > 0) {
+        if (data && Array.isArray(data.freeLines)) {
           lastFreeLines = data.freeLines;
           if (typeof window.syncInlineCaptionEditor === "function") window.syncInlineCaptionEditor(lastFreeLines);
           renderScript(0, 0);
@@ -4568,13 +4740,13 @@
         if (data && data.audioProfile) updateSoundCheckTelemetryUI(data.audioProfile);
         if (data && data.lines) updateLineBankUI(data.lines);
         if (data && data.takeHistory) updateTakeHistoryVaultUI(data.takeHistory);
-        if (data && data.hookSuggestions) updateHookSuggestionsUI(data.hookSuggestions, data.generatedHook);
+        if (data && Array.isArray(data.hookSuggestions)) updateHookSuggestionsUI(data.hookSuggestions, data.generatedHook || "");
         if (data && data.masteredMp4) {
           if (typeof window.markWizardStepDone === "function") window.markWizardStepDone(4);
           setDownloadLinks(data.masteredMp4);
           const finalDur = data.finalDuration ? Number(data.finalDuration).toFixed(1) : elapsedSec.toFixed(1);
           setMasteringState(false, finalDur);
-          statusPrompt.textContent = `READY • Mastered 1080p MP4 (-14.0 LUFS • ${finalDur}s) • Hook: "${data.generatedHook || ""}"`;
+          statusPrompt.textContent = `READY • Mastered 1080p MP4 (-14.0 LUFS • ${finalDur}s)${data.generatedHook ? ` • Hook: "${data.generatedHook}"` : ""}`;
           sendSync("status", { statusText: statusPrompt.textContent });
         } else {
           setMasteringState(false);
@@ -4606,6 +4778,19 @@
       activeIdx = 0;
       spokenWordCount = 0;
       currentBeatFraction = 0;
+      if (currentMode === "free") {
+        lastFreeLines = [];
+        liveFreeLines = [];
+        liveFreePhrase = "";
+        if (typeof window.syncInlineCaptionEditor === "function") {
+          window.syncInlineCaptionEditor([]);
+        }
+        if (!hookModeSelect || hookModeSelect.value === "auto") {
+          if (hookBannerInput) hookBannerInput.value = "";
+          if (hookSuggestionsRow) hookSuggestionsRow.innerHTML = "";
+          syncLiveHookBannerDOM();
+        }
+      }
       renderScript(0, 0);
       countdownOverlay.style.display = "flex";
       for (let i = 3; i >= 1; i--) {
@@ -5357,8 +5542,14 @@
         echoFilter = audioCtx.createBiquadFilter();
         echoFilter.type = "peaking";
         echoFilter.frequency.value = 390;
-        echoFilter.Q.value = 1.5;
+        echoFilter.Q.value = 2.1;
         echoFilter.gain.value = -3.6;
+
+        honkFilter = audioCtx.createBiquadFilter();
+        honkFilter.type = "peaking";
+        honkFilter.frequency.value = 850;
+        honkFilter.Q.value = 1.6;
+        honkFilter.gain.value = -2.4;
 
         presenceFilter = audioCtx.createBiquadFilter();
         presenceFilter.type = "peaking";
@@ -5417,7 +5608,8 @@
         src.connect(hpFilter);
         hpFilter.connect(mudFilter);
         mudFilter.connect(echoFilter);
-        echoFilter.connect(presenceFilter);
+        echoFilter.connect(honkFilter);
+        honkFilter.connect(presenceFilter);
         presenceFilter.connect(deEssFilter);
         deEssFilter.connect(airFilter);
         airFilter.connect(gainNode);
@@ -5496,6 +5688,10 @@
         const speechRmsSamplesDb = [];
         let peakSampleDb = -60;
         const bandAccum = { mud: [], box: [], mid: [], pres: [], sib: [] };
+        const resBinAccum = new Float64Array(freqBuf.length);
+        let resFrameCount = 0;
+        let prevSpeechRmsLinear = 0;
+        const echoRatios = [];
 
         const startSc = performance.now();
         while (performance.now() - startSc < 5000) {
@@ -5513,7 +5709,8 @@
             const a = Math.abs(v);
             if (a > maxAbs) maxAbs = a;
           }
-          const rmsDb = 20 * Math.log10(Math.max(1e-5, Math.sqrt(sumSq / timeBuf.length)));
+          const rmsLinear = Math.sqrt(sumSq / timeBuf.length);
+          const rmsDb = 20 * Math.log10(Math.max(1e-5, rmsLinear));
           const pkDb = 20 * Math.log10(Math.max(1e-5, maxAbs));
 
           if (elapsed < 1.2) {
@@ -5530,6 +5727,15 @@
               bandAccum.mid.push(computeBandEnergyDb(freqBuf, sr, 600, 2200));
               bandAccum.pres.push(computeBandEnergyDb(freqBuf, sr, 2800, 5000));
               bandAccum.sib.push(computeBandEnergyDb(freqBuf, sr, 5800, 8200));
+              for (let b = 0; b < freqBuf.length; b++) {
+                resBinAccum[b] += freqBuf[b];
+              }
+              resFrameCount++;
+              // Track post-syllable room reflection decay tail
+              if (prevSpeechRmsLinear > 0.035 && rmsLinear < prevSpeechRmsLinear * 0.72 && rmsLinear > 0.004) {
+                echoRatios.push(rmsLinear / prevSpeechRmsLinear);
+              }
+              prevSpeechRmsLinear = rmsLinear;
             }
             if (soundCheckBtn) soundCheckBtn.textContent = `2/2 Speak Naturally (${rem}s)...`;
             if (scStatusTitle) scStatusTitle.textContent = "Step 2/2: Speak Naturally Into Mic...";
@@ -5557,6 +5763,27 @@
         const presAvg = avg(bandAccum.pres, -58);
         const sibAvg = avg(bandAccum.sib, -60);
 
+        // Identify exact room standing-wave resonant peak between 180 Hz and 700 Hz
+        let roomResonanceHz = 390;
+        if (resFrameCount > 0) {
+          const nyquist = sr / 2;
+          const bMin = Math.max(1, Math.floor((180 / nyquist) * freqBuf.length));
+          const bMax = Math.min(freqBuf.length - 1, Math.ceil((700 / nyquist) * freqBuf.length));
+          let bestBin = bMin;
+          let bestVal = -1;
+          for (let b = bMin; b <= bMax; b++) {
+            const v = resBinAccum[b] / resFrameCount;
+            if (v > bestVal) {
+              bestVal = v;
+              bestBin = b;
+            }
+          }
+          roomResonanceHz = Math.round(Math.max(180, Math.min(700, (bestBin / freqBuf.length) * nyquist)));
+        }
+
+        const echoTailRatio = Number(Math.max(0.10, Math.min(0.58, avg(echoRatios, boxAvg - midAvg > -1.5 ? 0.29 : 0.21))).toFixed(2));
+        const clippingDetected = peakSampleDb > -0.6;
+
         // Compute adaptive spectral shaping relative to vocal fundamental mid band
         const mudExcess = mudAvg - midAvg;
         const boxExcess = boxAvg - midAvg;
@@ -5564,11 +5791,11 @@
         const sibExcess = sibAvg - presAvg;
 
         const mudCutDb = Math.max(-5.8, Math.min(-2.5, Number((-3.6 - mudExcess * 0.18).toFixed(1))));
-        const boxCutDb = Math.max(-5.2, Math.min(-2.5, Number((-3.4 - boxExcess * 0.18).toFixed(1))));
+        const boxCutDb = Math.max(-5.8, Math.min(-2.5, Number((-3.6 - boxExcess * 0.22 - (echoTailRatio > 0.28 ? 0.8 : 0)).toFixed(1))));
         const presenceBoostDb = Math.max(2.4, Math.min(4.6, Number((2.8 + presDeficit * 0.12).toFixed(1))));
         const deEssCutDb = Math.max(-5.5, Math.min(-2.5, Number((-3.2 - Math.max(0, sibExcess + 4) * 0.25).toFixed(1))));
         const airBoostDb = Number(Math.max(2.2, Math.min(4.2, presenceBoostDb * 0.9)).toFixed(1));
-        const hpFreq = noiseFloorDb > -44 ? 105 : 95;
+        const hpFreq = noiseFloorDb > -44 || echoTailRatio > 0.28 ? 105 : 95;
         const nrAmountDb = noiseFloorDb > -42 ? 15 : noiseFloorDb > -48 ? 13 : 12;
 
         // Auto-set Vocal Boost slider based on measured RMS
@@ -5583,6 +5810,9 @@
           noiseFloorDb: Number(noiseFloorDb.toFixed(1)),
           speechRmsDb: Number(speechRmsDb.toFixed(1)),
           speechPeakDb: Number(peakSampleDb.toFixed(1)),
+          roomResonanceHz,
+          echoTailRatio,
+          clippingDetected,
           hpFreq,
           nrAmountDb,
           mudCutDb,
@@ -6397,7 +6627,7 @@
             "X-Font-Scale": fontScaleSelect ? fontScaleSelect.value : "100",
             "X-Captions": burnCaptionsCheck && burnCaptionsCheck.checked ? "1" : "0",
             "X-Burn-Hook": burnHookCheck && burnHookCheck.checked ? "1" : "0",
-            "X-Hook-Banner": encodeURIComponent(hookBannerInput ? hookBannerInput.value.trim() : "Creator Studio Tip"),
+            "X-Hook-Banner": encodeURIComponent(hookBannerInput ? hookBannerInput.value.trim() : ""),
             "X-Hook-X": String(Math.round(hookBannerX)),
             "X-Hook-Y": String(Math.round(hookBannerY))
           },
@@ -6405,6 +6635,15 @@
         });
         const data = await res.json();
         if (data && data.ok && data.masteredMp4) {
+          lastFreeLines = Array.isArray(data.freeLines) ? data.freeLines : [];
+          if (typeof window.syncInlineCaptionEditor === "function") {
+            window.syncInlineCaptionEditor(lastFreeLines);
+          }
+          if (Array.isArray(data.hookSuggestions)) {
+            updateHookSuggestionsUI(data.hookSuggestions, data.generatedHook || "");
+          }
+          renderScript(0, 0);
+          drawWebcamOverlayCaptions();
           if (data.takeHistory) updateTakeHistoryVaultUI(data.takeHistory);
           setDownloadLinks(data.masteredMp4);
           setMasteringState(false, data.finalDuration);
@@ -7353,6 +7592,21 @@
     renderWizardUI();
     updateSeoAndRetentionScorecard();
 
+    // Unified Top Bar "View & Panels" Dropdown Menu Toggle
+    const viewMenuToggleBtn = document.getElementById("viewMenuToggleBtn");
+    const viewDropdownMenu = document.getElementById("viewDropdownMenu");
+    if (viewMenuToggleBtn && viewDropdownMenu) {
+      viewMenuToggleBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        viewDropdownMenu.classList.toggle("open");
+      });
+      document.addEventListener("click", (e) => {
+        if (!viewDropdownMenu.contains(e.target) && e.target !== viewMenuToggleBtn) {
+          viewDropdownMenu.classList.remove("open");
+        }
+      });
+    }
+
     // Inline Caption Transcript Editor & Dirty Re-Master State
     const inlineCaptionEditor = document.getElementById("inlineCaptionEditor");
     window.syncInlineCaptionEditor = function (linesArr) {
@@ -7370,11 +7624,9 @@
           .split(/\r?\n/)
           .map((s) => s.trim())
           .filter(Boolean);
-        if (edited.length > 0) {
-          lastFreeLines = edited;
-          renderScript(0, 0);
-          drawWebcamOverlayCaptions();
-        }
+        lastFreeLines = edited;
+        renderScript(0, 0);
+        drawWebcamOverlayCaptions();
         if (remasterBtn) {
           remasterBtn.classList.add("remaster-dirty");
           remasterBtn.textContent = "Apply Edited Captions & Re-Master";

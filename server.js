@@ -107,15 +107,6 @@ process.on('unhandledRejection', (err) => {
   } catch (e) {}
 });
 
-// Pre-populate latest_take_mastered.mp4 with our pre-rendered Episode 1 1080p MP4 if not yet recorded
-const defaultSampleMp4 = path.join(brainDir, 'ep1_3_point_lighting_illustration.mp4');
-const initialMasterPath = path.join(scratchDir, 'latest_take_mastered.mp4');
-if (fs.existsSync(defaultSampleMp4) && !fs.existsSync(initialMasterPath)) {
-  try {
-    fs.copyFileSync(defaultSampleMp4, initialMasterPath);
-  } catch (e) {}
-}
-
 const takeHistoryPath = path.join(scratchDir, 'take_history.json');
 function loadTakeHistory() {
   const demoFiles = new Set([
@@ -137,7 +128,8 @@ function loadTakeHistory() {
             !demoFiles.has(t.file) &&
             fs.existsSync(path.join(scratchDir, t.file)) &&
             Number(t.duration || 0) >= 1.0 &&
-            !/^Free Record Take\.\.\.$/i.test(String(t.label || ''))
+            !/^Free Record Take\.\.\.$/i.test(String(t.label || '')) &&
+            !/^Move your phone camera/i.test(String(t.label || ''))
         );
       }
     }
@@ -152,26 +144,20 @@ function loadTakeHistory() {
 
 let TAKE_HISTORY = loadTakeHistory();
 
-function addTakeToHistory({ file, label, duration }) {
+function addTakeToHistory({ file, rawFile, label, duration, freeLines, hookBannerText }) {
   const entry = {
     id: path.basename(file, '.mp4'),
     file,
+    rawFile: rawFile || null,
     url: `/takes/${file}`,
     label: label || `Take • ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`,
     duration: Number(Number(duration || 0).toFixed(1)),
+    freeLines: Array.isArray(freeLines) ? freeLines : [],
+    hookBannerText: hookBannerText || '',
     timestamp: new Date().toISOString()
   };
-  const coreFiles = new Set([
-    'vault_ep4_camera_hacks.mp4',
-    'vault_ep3_lighting_angle.mp4',
-    'vault_ep2_wireless_mic.mp4',
-    'vault_ep1_camera_distance.mp4',
-    'vault_frank_intro_bare_minimum.mp4'
-  ]);
-  const others = TAKE_HISTORY.filter((t) => t.file !== file);
-  const coreEntries = others.filter((t) => coreFiles.has(t.file));
-  const customEntries = others.filter((t) => !coreFiles.has(t.file)).slice(0, 6);
-  TAKE_HISTORY = [entry, ...customEntries, ...coreEntries];
+  const others = TAKE_HISTORY.filter((t) => t.file !== file).slice(0, 11);
+  TAKE_HISTORY = [entry, ...others];
   try {
     fs.writeFileSync(takeHistoryPath, JSON.stringify(TAKE_HISTORY, null, 2), 'utf8');
   } catch (e) {}
@@ -470,20 +456,18 @@ function episodeToScriptLines(episode) {
   });
 }
 
-let currentEpisodeId = 'mini-1-1-camera-distance';
-let SCRIPT_LINES = episodeToScriptLines(EPISODES[0]);
+let currentEpisodeId = 'custom';
+let SCRIPT_LINES = [];
 
-function parseCustomScriptLines(rawText, baseEpisode) {
+function parseCustomScriptLines(rawText) {
   const rows = String(rawText || '')
     .split(/\r?\n/)
     .map((s) => s.trim())
     .filter(Boolean);
-  if (rows.length === 0) return episodeToScriptLines(baseEpisode || EPISODES[0]);
+  if (rows.length === 0) return [];
   return rows.map((rawRow, idx) => {
     // Allow optional "[BEAT TITLE] Spoken sentence..." syntax per line
-    let beatTitle =
-      (baseEpisode && baseEpisode.lines && baseEpisode.lines[idx] && baseEpisode.lines[idx].beatTitle) ||
-      `STEP ${idx + 1}`;
+    let beatTitle = `STEP ${idx + 1}`;
     let text = rawRow;
     const bracketMatch = rawRow.match(/^\[([^\]]+)\]\s*(.+)$/);
     if (bracketMatch) {
@@ -880,16 +864,22 @@ const DEFAULT_AUTO_AUDIO_PROFILE = {
   nrAmountDb: 12,
   mudCutDb: -3.8,
   boxCutDb: -3.6,
-  honkCutDb: -2.2,
+  honkCutDb: -2.4,
+  roomResonanceHz: 390,
+  echoTailRatio: 0.22,
   presenceBoostDb: 3.4,
   deEssCutDb: -3.2,
-  airBoostDb: 3.2,
-  gateThresholdLinear: 0.006,
+  airBoostDb: 3.0,
+  gateThresholdLinear: 0.008,
+  gateRangeLinear: 0.25,
+  gateRatio: 2.2,
   compThresholdDb: -21,
   compRatio: 2.8,
   makeupGainDb: 2.5,
+  acousticDiagnosis: 'Balanced Room • De-Reverb Expander Active',
+  acousticTip: 'Mic distance & room acoustics look solid.',
   masteredCheckUrl: null,
-  summary: 'NR -12dB • Mud -3.8dB • Box -3.6dB • Presence +3.4dB • De-Ess -3.2dB • -14.0 LUFS'
+  summary: 'NR -12dB • De-Echo Gate • 390Hz Anti-Ring • Pres +3.4dB • De-Ess • -14.0 LUFS'
 };
 
 function loadAutoAudioProfile() {
@@ -1005,79 +995,186 @@ function clampNum(v, min, max, fallback) {
 function getAfChain(preset, customProfile = null, avDelayMs = 0) {
   const delayMs = Math.round(clampNum(avDelayMs, 0, 250, 0));
   const delayPrefix = delayMs > 0 ? `adelay=${delayMs}|${delayMs},` : '';
+  const p = { ...DEFAULT_AUTO_AUDIO_PROFILE, ...(AUTO_AUDIO_PROFILE || {}), ...(customProfile || {}) };
+  const resHz = Math.round(clampNum(p.roomResonanceHz, 175, 720, 390));
+
   if (preset === 'raw') {
     return delayPrefix + 'aresample=48000';
   }
+
+  // 1. ECHO & HARD-WALL RESCUE (Empty bedrooms, kitchens, offices with slapback reverb & boxy standing waves)
+  if (preset === 'de_echo') {
+    return delayPrefix + [
+      'adeclip',
+      'adeclick=w=45:o=75:t=2.5',
+      'asubcut=cutoff=95:order=6',
+      'highpass=f=105:poles=2',
+      'afftdn=nr=15:nf=-44:tn=1',
+      'anlmdn=s=3.5:p=0.004:r=0.01',
+      'agate=mode=downward:threshold=0.016:range=0.16:ratio=2.8:attack=5:release=115:knee=4:detection=rms',
+      `adynamicequalizer=dfrequency=${resHz}:dqfactor=2.4:tfrequency=${resHz}:tqfactor=2.2:attack=8:release=120:ratio=4.5:mode=cut:auto=on`,
+      'equalizer=f=225:t=q:w=1.3:g=-4.5',
+      `equalizer=f=${resHz}:t=q:w=1.8:g=-4.2`,
+      'equalizer=f=585:t=q:w=1.7:g=-3.4',
+      'equalizer=f=3600:t=q:w=1.1:g=3.4',
+      'deesser=i=0.45:m=0.5:f=0.5',
+      'lowpass=f=13800',
+      'dynaudnorm=f=240:g=13:p=0.92:m=6:s=18',
+      'acompressor=threshold=-20dB:ratio=2.8:attack=10:release=140:makeup=4.5dB:knee=6dB',
+      'loudnorm=I=-14.0:TP=-1.0:LRA=8.0',
+      'aresample=48000'
+    ].join(',');
+  }
+
+  // 2. $13 WIRELESS / EARBUD MIC RESCUE (Clipped peaks, collar rustle, thin low-end, harsh 6kHz sibilance & 2.4GHz codec fizz)
+  if (preset === 'cheap_mic') {
+    return delayPrefix + [
+      'adeclip=w=55:o=75:a=8:t=8',
+      'adeclick=w=45:o=75:t=2.0',
+      'asubcut=cutoff=88:order=6',
+      'highpass=f=90:poles=2',
+      'afftdn=nr=13:nf=-45:tn=1',
+      'agate=mode=downward:threshold=0.010:range=0.22:ratio=2.2:attack=6:release=135:knee=4:detection=rms',
+      'equalizer=f=165:t=q:w=1.1:g=2.4',
+      'equalizer=f=255:t=q:w=1.4:g=-3.4',
+      `adynamicequalizer=dfrequency=${resHz}:dqfactor=2.2:tfrequency=${resHz}:tqfactor=2.0:attack=10:release=140:ratio=3.2:mode=cut:auto=on`,
+      'equalizer=f=3300:t=q:w=1.1:g=2.6',
+      'equalizer=f=6400:t=q:w=2.0:g=-4.5',
+      'deesser=i=0.62:m=0.6:f=0.5',
+      'lowpass=f=12600:poles=2',
+      'dynaudnorm=f=220:g=13:p=0.92:m=7:s=16',
+      'acompressor=threshold=-20dB:ratio=3.0:attack=8:release=150:makeup=4.5dB:knee=6dB',
+      'loudnorm=I=-14.0:TP=-1.0:LRA=8.0',
+      'aresample=48000'
+    ].join(',');
+  }
+
+  // 3. LAPTOP / DISTANT MIC RESCUE (2-3ft away from phone/webcam without a lapel mic)
+  if (preset === 'far_mic') {
+    return delayPrefix + [
+      'adeclip',
+      'adeclick=w=45:o=75:t=2.5',
+      'asubcut=cutoff=98:order=6',
+      'highpass=f=108:poles=2',
+      'afftdn=nr=16:nf=-42:tn=1',
+      'anlmdn=s=4.0:p=0.004:r=0.01',
+      'agate=mode=downward:threshold=0.015:range=0.18:ratio=2.6:attack=5:release=120:knee=4:detection=rms',
+      `adynamicequalizer=dfrequency=${resHz}:dqfactor=2.4:tfrequency=${resHz}:tqfactor=2.2:attack=8:release=125:ratio=4.0:mode=cut:auto=on`,
+      'equalizer=f=240:t=q:w=1.3:g=-4.2',
+      `equalizer=f=${resHz}:t=q:w=1.7:g=-3.8`,
+      'equalizer=f=590:t=q:w=1.6:g=-3.2',
+      'equalizer=f=3500:t=q:w=1.0:g=4.2',
+      'deesser=i=0.45:m=0.5:f=0.5',
+      'lowpass=f=13500',
+      'dynaudnorm=f=220:g=13:p=0.92:m=8:s=16',
+      'acompressor=threshold=-21dB:ratio=3.2:attack=8:release=140:makeup=5.5dB:knee=6dB',
+      'loudnorm=I=-14.0:TP=-1.0:LRA=8.0',
+      'aresample=48000'
+    ].join(',');
+  }
+
   if (preset === 'warm') {
     return delayPrefix + [
+      'adeclip',
+      'adeclick=w=45:o=75:t=2.5',
+      'asubcut=cutoff=80:order=6',
       'highpass=f=82:poles=2',
-      'afftdn=nr=11:nf=-46:tn=1',
-      'equalizer=f=160:t=q:w=1.1:g=1.6',
-      'equalizer=f=240:t=q:w=1.3:g=-2.6',
-      'equalizer=f=385:t=q:w=1.5:g=-2.6',
+      'afftdn=nr=12:nf=-46:tn=1',
+      'agate=mode=downward:threshold=0.008:range=0.25:ratio=2.0:attack=6:release=145:knee=4:detection=rms',
+      'equalizer=f=160:t=q:w=1.1:g=1.8',
+      'equalizer=f=240:t=q:w=1.3:g=-2.8',
+      `equalizer=f=${resHz}:t=q:w=1.6:g=-2.8`,
       'equalizer=f=3400:t=q:w=1.2:g=2.4',
       'equalizer=f=6500:t=q:w=2.2:g=-3.0',
+      'deesser=i=0.40:m=0.45:f=0.5',
       'treble=f=9500:g=2.0',
-      'dynaudnorm=f=150:g=9:p=0.92:m=22:s=12',
-      'acompressor=threshold=-20dB:ratio=2.8:attack=12:release=160:makeup=5dB:knee=6dB',
-      'loudnorm=I=-14.0:TP=-1.0:LRA=9.0',
+      'lowpass=f=14200',
+      'dynaudnorm=f=220:g=13:p=0.92:m=7:s=16',
+      'acompressor=threshold=-20dB:ratio=2.8:attack=12:release=160:makeup=4.5dB:knee=6dB',
+      'loudnorm=I=-14.0:TP=-1.0:LRA=8.5',
       'aresample=48000'
     ].join(',');
   }
   if (preset === 'crisp') {
     return delayPrefix + [
+      'adeclip',
+      'adeclick=w=45:o=75:t=2.5',
+      'asubcut=cutoff=92:order=6',
       'highpass=f=98:poles=2',
       'afftdn=nr=13:nf=-45:tn=1',
+      'agate=mode=downward:threshold=0.009:range=0.22:ratio=2.2:attack=6:release=135:knee=4:detection=rms',
       'equalizer=f=230:t=q:w=1.2:g=-3.8',
-      'equalizer=f=390:t=q:w=1.4:g=-3.4',
+      `equalizer=f=${resHz}:t=q:w=1.6:g=-3.4`,
       'equalizer=f=3800:t=q:w=1.1:g=3.8',
       'equalizer=f=6600:t=q:w=2.2:g=-3.2',
-      'treble=f=9200:g=3.4',
-      'dynaudnorm=f=150:g=9:p=0.92:m=22:s=12',
-      'acompressor=threshold=-19dB:ratio=3.0:attack=8:release=140:makeup=5.5dB:knee=6dB',
+      'deesser=i=0.48:m=0.5:f=0.5',
+      'treble=f=9200:g=3.2',
+      'lowpass=f=14000',
+      'dynaudnorm=f=220:g=13:p=0.92:m=7:s=16',
+      'acompressor=threshold=-19dB:ratio=3.0:attack=8:release=140:makeup=5dB:knee=6dB',
       'loudnorm=I=-14.0:TP=-1.0:LRA=8.5',
       'aresample=48000'
     ].join(',');
   }
   if (preset === 'studio') {
     return delayPrefix + [
+      'adeclip',
+      'adeclick=w=45:o=75:t=2.5',
+      'asubcut=cutoff=86:order=6',
       'highpass=f=90:poles=2',
       'afftdn=nr=12:nf=-46:tn=1',
+      'agate=mode=downward:threshold=0.008:range=0.24:ratio=2.1:attack=6:release=140:knee=4:detection=rms',
+      `adynamicequalizer=dfrequency=${resHz}:dqfactor=2.2:tfrequency=${resHz}:tqfactor=2.0:attack=10:release=140:ratio=3.0:mode=cut:auto=on`,
       'equalizer=f=230:t=q:w=1.2:g=-3.2',
-      'equalizer=f=390:t=q:w=1.5:g=-2.8',
+      `equalizer=f=${resHz}:t=q:w=1.6:g=-3.0`,
       'equalizer=f=3600:t=q:w=1.1:g=3.0',
       'equalizer=f=6600:t=q:w=2.0:g=-2.8',
+      'deesser=i=0.42:m=0.45:f=0.5',
       'treble=f=9500:g=2.6',
-      'dynaudnorm=f=150:g=9:p=0.92:m=22:s=12',
-      'acompressor=threshold=-20dB:ratio=2.8:attack=10:release=150:makeup=5dB:knee=6dB',
-      'loudnorm=I=-14.0:TP=-1.0:LRA=9.0',
+      'lowpass=f=14000',
+      'dynaudnorm=f=220:g=13:p=0.92:m=7:s=16',
+      'acompressor=threshold=-20dB:ratio=2.8:attack=10:release=150:makeup=4.5dB:knee=6dB',
+      'loudnorm=I=-14.0:TP=-1.0:LRA=8.5',
       'aresample=48000'
     ].join(',');
   }
 
-  // 'auto' — Full Broadcast Master (-14.0 LUFS, -1.0 dBTP True Peak, Adaptive Spectral EQ + Compression)
-  const p = { ...DEFAULT_AUTO_AUDIO_PROFILE, ...(AUTO_AUDIO_PROFILE || {}), ...(customProfile || {}) };
-  const hp = Math.round(clampNum(p.hpFreq, 80, 120, 90));
-  const nr = Number(clampNum(p.nrAmountDb, 10, 16, 12).toFixed(1));
-  const nf = Math.round(clampNum(p.noiseFloorDb, -65, -38, -48));
-  const mud = Number(clampNum(p.mudCutDb, -5.5, -2.0, -3.5).toFixed(1));
-  const box = Number(clampNum(p.boxCutDb, -5.0, -2.0, -3.2).toFixed(1));
-  const pres = Number(clampNum(p.presenceBoostDb, 2.0, 4.6, 3.2).toFixed(1));
-  const deEss = Number(clampNum(p.deEssCutDb, -5.0, -2.0, -3.0).toFixed(1));
-  const air = Number(clampNum(p.airBoostDb, 1.8, 4.2, 2.8).toFixed(1));
+  // 'auto' — Full Broadcast Master (-14.0 LUFS, -1.0 dBTP True Peak, Adaptive De-Reverb Gate + Standing-Wave Notch + De-Clip/De-Ess)
+  const hp = Math.round(clampNum(p.hpFreq, 80, 120, 92));
+  const subCut = Math.max(75, hp - 6);
+  const nr = Number(clampNum(p.nrAmountDb, 10, 17, 12.5).toFixed(1));
+  const nf = Math.round(clampNum(p.noiseFloorDb, -65, -36, -48));
+  const mud = Number(clampNum(p.mudCutDb, -6.0, -2.0, -3.6).toFixed(1));
+  const box = Number(clampNum(p.boxCutDb, -5.8, -2.0, -3.4).toFixed(1));
+  const honk = Number(clampNum(p.honkCutDb, -4.5, -1.5, -2.4).toFixed(1));
+  const pres = Number(clampNum(p.presenceBoostDb, 2.0, 4.8, 3.4).toFixed(1));
+  const deEss = Number(clampNum(p.deEssCutDb, -5.5, -2.0, -3.2).toFixed(1));
+  const air = Number(clampNum(p.airBoostDb, 1.5, 4.2, 2.8).toFixed(1));
+  const gateThresh = Number(clampNum(p.gateThresholdLinear, 0.004, 0.025, 0.009).toFixed(4));
+  const gateRange = Number(clampNum(p.gateRangeLinear, 0.14, 0.35, 0.22).toFixed(2));
+  const gateRatio = Number(clampNum(p.gateRatio, 1.8, 3.2, 2.2).toFixed(1));
+  const dynRatio = Number(clampNum((Number(p.echoTailRatio) || 0.22) > 0.28 ? 4.2 : 3.2, 2.5, 5.0, 3.2).toFixed(1));
 
   return delayPrefix + [
+    'adeclip',
+    'adeclick=w=45:o=75:t=2.5',
+    `asubcut=cutoff=${subCut}:order=6`,
     `highpass=f=${hp}:poles=2`,
     `afftdn=nr=${nr}:nf=${nf}:tn=1`,
-    `equalizer=f=230:t=q:w=1.2:g=${mud}`,
-    `equalizer=f=385:t=q:w=1.5:g=${box}`,
+    `agate=mode=downward:threshold=${gateThresh}:range=${gateRange}:ratio=${gateRatio}:attack=6:release=130:knee=4:detection=rms`,
+    `adynamicequalizer=dfrequency=${resHz}:dqfactor=2.4:tfrequency=${resHz}:tqfactor=2.1:attack=8:release=130:ratio=${dynRatio}:mode=cut:auto=on`,
+    `equalizer=f=225:t=q:w=1.2:g=${mud}`,
+    `equalizer=f=${resHz}:t=q:w=1.7:g=${box}`,
+    `equalizer=f=585:t=q:w=1.6:g=${honk}`,
     `equalizer=f=3600:t=q:w=1.1:g=${pres}`,
     `equalizer=f=6600:t=q:w=2.2:g=${deEss}`,
+    'deesser=i=0.45:m=0.5:f=0.5',
     `treble=f=9500:g=${air}`,
-    `dynaudnorm=f=150:g=9:p=0.92:m=22:s=12`,
-    `acompressor=threshold=-20dB:ratio=2.8:attack=10:release=150:makeup=5dB:knee=6dB`,
-    `loudnorm=I=-14.0:TP=-1.0:LRA=9.0`,
-    `aresample=48000`
+    'lowpass=f=13800',
+    'dynaudnorm=f=220:g=13:p=0.92:m=7:s=16',
+    'acompressor=threshold=-20dB:ratio=2.8:attack=10:release=150:makeup=4.5dB:knee=6dB',
+    'loudnorm=I=-14.0:TP=-1.0:LRA=8.5',
+    'aresample=48000'
   ].join(',');
 }
 
@@ -1126,24 +1223,53 @@ function buildCalibratedProfileFromTelemetry(ffStats, clientHint = {}) {
   const speechPeakDb = clampNum(ffStats.speechPeakDb, -24, 0, -1.6);
   const measuredLufs = clampNum(ffStats.measuredLufs, -34, -8, -16.5);
 
+  // Room resonance & echo decay metrics from 5s Sound Check
+  const roomResonanceHz = Math.round(clampNum(clientHint.roomResonanceHz, 175, 720, 390));
+  const echoTailRatio = Number(clampNum(clientHint.echoTailRatio, 0.08, 0.65, 0.22).toFixed(2));
+  const clippingDetected = Boolean(clientHint.clippingDetected || speechPeakDb > -0.6);
+
   // Adaptive Noise Reduction (10 dB in quiet room, up to 16 dB in noisy HVAC room)
   const nrAmountDb = Number(clampNum(noiseFloorDb > -42 ? 15.5 : noiseFloorDb > -48 ? 13.5 : 11.5, 10, 17, 12).toFixed(1));
   const hpFreq = Math.round(clampNum(clientHint.hpFreq || (noiseFloorDb > -44 ? 105 : 95), 85, 115, 95));
 
   // Spectral balance from client FFT ratios + broadcast target curve
   const mudCutDb = Number(clampNum(clientHint.mudCutDb, -5.8, -2.5, -3.8).toFixed(1));
-  const boxCutDb = Number(clampNum(clientHint.boxCutDb, -5.2, -2.5, -3.6).toFixed(1));
-  const honkCutDb = -2.2;
+  const boxCutDb = Number(clampNum(clientHint.boxCutDb, -5.8, -2.5, -3.6).toFixed(1));
+  const honkCutDb = echoTailRatio > 0.28 ? -3.4 : -2.4;
   const presenceBoostDb = Number(clampNum(clientHint.presenceBoostDb, 2.4, 4.6, 3.4).toFixed(1));
   const deEssCutDb = Number(clampNum(clientHint.deEssCutDb, -5.5, -2.5, -3.2).toFixed(1));
   const airBoostDb = Number(clampNum(clientHint.airBoostDb, 2.2, 4.2, 3.2).toFixed(1));
 
-  // Dynamic range & makeup gain calculation toward -14.0 LUFS
+  // Dynamic range, downward de-reverb expansion & makeup gain toward -14.0 LUFS
   const lufsDelta = clampNum(-14.0 - measuredLufs, 0, 9.0, 2.5);
   const makeupGainDb = Number(clampNum(lufsDelta + 1.0, 1.5, 8.0, 3.0).toFixed(1));
   const compThresholdDb = Math.round(clampNum(speechRmsDb - 1.5, -25, -18, -21));
   const compRatio = Number(clampNum(ffStats.lra > 7 ? 3.0 : 2.6, 2.2, 3.4, 2.8).toFixed(1));
-  const gateThresholdLinear = Number(clampNum(Math.pow(10, (noiseFloorDb + 9) / 20), 0.004, 0.012, 0.006).toFixed(4));
+
+  const baseGateLinear = Math.pow(10, (noiseFloorDb + (echoTailRatio > 0.28 ? 12 : 9)) / 20);
+  const gateThresholdLinear = Number(clampNum(baseGateLinear, 0.005, 0.018, 0.008).toFixed(4));
+  const gateRangeLinear = echoTailRatio > 0.28 ? 0.16 : 0.24;
+  const gateRatio = echoTailRatio > 0.28 ? 2.6 : 2.1;
+
+  // Actionable Acoustic Diagnosis & Physical Mic Tip
+  let acousticDiagnosis = `Balanced Room • ${roomResonanceHz}Hz Notch + De-Reverb Active`;
+  let acousticTip = 'Keep mic 6–8 in from mouth at a 45° angle to minimize plosives.';
+  if (clippingDetected && echoTailRatio > 0.28) {
+    acousticDiagnosis = `Hot Mic + Room Echo (${roomResonanceHz}Hz Ring) • De-Clip & De-Reverb Active`;
+    acousticTip = 'Lower mic input gain slightly and step 1–2 ft away from bare walls.';
+  } else if (clippingDetected) {
+    acousticDiagnosis = 'Hot / Clipping Mic Detected • Auto De-Clip & Limiter Active';
+    acousticTip = 'Angle lav/mic slightly below chin or reduce input gain by 15%.';
+  } else if (echoTailRatio > 0.28) {
+    acousticDiagnosis = `Echoey Room (${roomResonanceHz}Hz Ring) • Downward De-Reverb Active`;
+    acousticTip = 'Move mic closer to collar (6 in) or face away from hard bare walls.';
+  } else if (noiseFloorDb > -44) {
+    acousticDiagnosis = `High Room Noise (${noiseFloorDb.toFixed(0)}dB) • Spectral NR + Gate Active`;
+    acousticTip = 'Keep mic close to voice so speech stays 20dB above background fan/AC.';
+  } else if (speechRmsDb < -26) {
+    acousticDiagnosis = `Distant / Quiet Mic (${speechRmsDb.toFixed(0)}dB) • Dialogue Boost Active`;
+    acousticTip = 'Bring mic within 6–10 in of mouth for richer vocal warmth.';
+  }
 
   return {
     calibrated: true,
@@ -1160,14 +1286,20 @@ function buildCalibratedProfileFromTelemetry(ffStats, clientHint = {}) {
     mudCutDb,
     boxCutDb,
     honkCutDb,
+    roomResonanceHz,
+    echoTailRatio,
     presenceBoostDb,
     deEssCutDb,
     airBoostDb,
     gateThresholdLinear,
+    gateRangeLinear,
+    gateRatio,
     compThresholdDb,
     compRatio,
     makeupGainDb,
-    summary: `NR -${nrAmountDb}dB • Mud ${mudCutDb}dB • Box ${boxCutDb}dB • Presence +${presenceBoostDb}dB • De-Ess ${deEssCutDb}dB • -14.0 LUFS`
+    acousticDiagnosis,
+    acousticTip,
+    summary: `NR -${nrAmountDb}dB • De-Echo Gate • ${roomResonanceHz}Hz Notch • Pres +${presenceBoostDb}dB • -14.0 LUFS`
   };
 }
 
@@ -1321,122 +1453,19 @@ function analyzeVideoContentForHook(linesArr) {
     .map((l) => String(l.text || l || '').trim())
     .filter(Boolean)
     .join(' ');
-  const lower = fullText.toLowerCase();
-
-  // 0b. Detect Ep 4: 3 Free Pre-Shoot Camera Hacks (Chip Bag Lens Marker, Wipe Lens, DND)
-  if (lower.includes('chip bag') || lower.includes('milky film') || (lower.includes('notifications') && lower.includes('momentum'))) {
+  if (!fullText) {
     return {
-      primaryHook: '3 Free Camera Hacks For Creators',
-      suggestions: [
-        '3 Free Camera Hacks For Creators',
-        'Fix Eye Contact & Milky Lens',
-        '3 Pre-Shoot Phone Camera Rules'
-      ]
+      primaryHook: '',
+      suggestions: []
     };
   }
 
-  // 0a. Detect Ep 3: Dead-On vs. 45-Degree Lighting
-  if (lower.includes('dead-on lighting') || lower.includes('45-degree') || (lower.includes('glare') && lower.includes('glasses'))) {
-    return {
-      primaryHook: 'Dead-On vs. 45° Lighting',
-      suggestions: [
-        'Dead-On vs. 45° Lighting',
-        'Stop Using 100% Ring Light',
-        'Fix Glasses Glare & Flat Face'
-      ]
-    };
-  }
-
-  // 0. Detect Ep 2: No Mic vs. $13 Wireless Bluetooth Mic
-  if (lower.includes('without a mic') || lower.includes('bluetooth microphone') || (lower.includes('$13') && lower.includes('microphone'))) {
-    return {
-      primaryHook: 'No Mic vs. $13 Wireless Mic',
-      suggestions: [
-        'No Mic vs. $13 Wireless Mic',
-        'Why You Need A $13 Mic',
-        'Stop Room Echo On TikTok'
-      ]
-    };
-  }
-
-  // 1. Detect Camera Distance / Lens Distortion / 1.5x-2x Zoom content
-  if ((lower.includes('camera') || lower.includes('phone')) && (lower.includes('distort') || lower.includes('2 to 3 feet') || lower.includes('1.5x'))) {
-    return {
-      primaryHook: 'Camera Distance & 1.5x Zoom',
-      suggestions: [
-        'Camera Distance & 1.5x Zoom',
-        'Stop Filming Too Close',
-        'Why Your Camera Distorts You'
-      ]
-    };
-  }
-
-  // 2. Detect Bare-Minimum Setup / Ditched Studio content
-  if (lower.includes('bare-minimum') || lower.includes('bare minimum') || (lower.includes('studio') && lower.includes("don't want"))) {
-    return {
-      primaryHook: 'Why I Ditched My Studio',
-      suggestions: [
-        'Why I Ditched My Studio',
-        'My Bare-Minimum Setup',
-        'Phone & Ring Light Only'
-      ]
-    };
-  }
-
-  // 3. Detect Target Collaboration Links / Spark Ads content
-  if (lower.includes('target link') || lower.includes('spark ad') || (lower.includes('8%') && lower.includes('22%'))) {
-    return {
-      primaryHook: '8% Open vs. 22% Target Links',
-      suggestions: [
-        '8% Open vs. 22% Target Links',
-        'Target Links + Spark Ads',
-        'How We Scale Creator GMV'
-      ]
-    };
-  }
-
-  // 4. Detect Sales Accelerator / Data Compass content
-  if (lower.includes('sales accelerator') || lower.includes('not qualified') || lower.includes('data compass')) {
-    return {
-      primaryHook: "Fix 'Not Qualified' SKUs",
-      suggestions: [
-        "Fix 'Not Qualified' SKUs",
-        'Data Compass SKU Audit',
-        'Unlock 15%+ Conversion SKUs'
-      ]
-    };
-  }
-
-  // 5. Detect LIVE Board GPM / 5-Min Pin Rotation content
-  if (lower.includes('gpm') || lower.includes('5-minute') || lower.includes('live board')) {
-    return {
-      primaryHook: '5-Min LIVE Pin Rotation',
-      suggestions: [
-        '5-Min LIVE Pin Rotation',
-        'Hit $50+ GPM on TikTok LIVE',
-        'LIVE Board Traffic Formula'
-      ]
-    };
-  }
-
-  // 6. Detect AHR / SPS / Shop Health content
-  if (lower.includes('ahr') || lower.includes('sps') || lower.includes('account health')) {
-    return {
-      primaryHook: 'Protect AHR 200+ & SPS 4.0+',
-      suggestions: [
-        'Protect AHR 200+ & SPS 4.0+',
-        '48-Hour SLA & LDR Guardrails',
-        'Avoid TikTok Shop Throttling'
-      ]
-    };
-  }
-
-  // 7. General Free-Recording Spoken Content Extraction (skips opening greetings/pleasantries)
+  // Extract concise hook options directly from the user's spoken sentences (skipping opening greetings)
   const greetingRegex = /^(hey\s+guys|hi\s+guys|hello\s+everyone|what'?s\s+up\s+guys|welcome\s+back|my\s+name\s+is|on\s+the\s+first\s+episode|i\s+want\s+to\s+start\s+off)/i;
   const sentences = fullText
     .split(/(?<=[.!?])\s+|\n+/)
     .map((s) => s.trim())
-    .filter((s) => s.length > 8 && !greetingRegex.test(s));
+    .filter((s) => s.length > 4 && !greetingRegex.test(s));
 
   const candidateSentences = sentences.length > 0 ? sentences : [fullText];
   const hooks = [];
@@ -1450,7 +1479,7 @@ function analyzeVideoContentForHook(linesArr) {
     const words = cleaned.split(/\s+/).filter(Boolean);
     if (words.length >= 2) {
       const shortPhrase = toTitleCaseHook(words.slice(0, 5).join(' '));
-      if (shortPhrase.length >= 6 && shortPhrase.length <= 28 && !hooks.includes(shortPhrase)) {
+      if (shortPhrase.length >= 4 && shortPhrase.length <= 28 && !hooks.includes(shortPhrase)) {
         hooks.push(shortPhrase);
       }
     }
@@ -1458,17 +1487,14 @@ function analyzeVideoContentForHook(linesArr) {
   }
 
   if (hooks.length === 0) {
-    hooks.push('Creator Production Tip', 'TikTok Studio Breakdown', 'Live Setup Walkthrough');
-  }
-  while (hooks.length < 3) {
-    const fallbacks = ['Creator Production Tip', 'TikTok Studio Breakdown', 'Live Setup Walkthrough'];
-    for (const fb of fallbacks) {
-      if (!hooks.includes(fb) && hooks.length < 3) hooks.push(fb);
+    const rawWords = fullText.replace(/[.!?]+/g, '').split(/\s+/).filter(Boolean);
+    if (rawWords.length > 0) {
+      hooks.push(toTitleCaseHook(rawWords.slice(0, 5).join(' ')).slice(0, 28));
     }
   }
 
   return {
-    primaryHook: hooks[0],
+    primaryHook: hooks[0] || '',
     suggestions: hooks.slice(0, 3)
   };
 }
@@ -1910,7 +1936,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
   }
   const maxWinEnd = (lineWindows || []).reduce((m, w) => Math.max(m, Number(w.end) || 0), 30);
   events.push(...buildAbBadgeAssEvents(abBadgeMode, lineWindows, maxWinEnd));
-  const activeLinesArr = Array.isArray(sourceLines) ? sourceLines : SCRIPT_LINES;
+  const activeLinesArr = Array.isArray(sourceLines) ? sourceLines : [];
   for (const win of lineWindows) {
     const lineObj = activeLinesArr[win.lineIndex];
     if (!lineObj) continue;
@@ -1989,8 +2015,8 @@ function processSingleTake(options, cb) {
 
     const totalKeptDuration = segs.reduce((acc, s) => acc + Math.max(0.1, s.end - s.start), 0);
 
-    // In Free Record mode, NEVER use the episode script (SCRIPT_LINES) for captions — only use spoken freeLines!
-    const sourceLinesForTake = mode === 'free'
+    // Only use explicit Custom Script lines when the user actually wrote a script; otherwise use current take's freeLines
+    const sourceLinesForTake = (mode === 'free' || SCRIPT_LINES.length === 0)
       ? (Array.isArray(freeLines) && freeLines.length > 0
           ? parseCustomScriptLines(freeLines.map((txt, idx) => `[LIVE BEAT ${idx + 1}] ${txt}`).join('\n'))
           : [])
@@ -2020,16 +2046,24 @@ function processSingleTake(options, cb) {
 
     const finalizeVaultAndCallback = () => {
       if (saveToVault) {
-        const vaultFile = `vault_take_${Date.now()}.mp4`;
+        const tsVault = Date.now();
+        const vaultFile = `vault_take_${tsVault}.mp4`;
+        const vaultRawFile = `vault_raw_${tsVault}${path.extname(inFile) || '.webm'}`;
         try {
           fs.copyFileSync(fullOutPath, path.join(scratchDir, vaultFile));
+          if (fs.existsSync(fullIn)) {
+            fs.copyFileSync(fullIn, path.join(scratchDir, vaultRawFile));
+          }
           const firstLine = (sourceLinesForTake[0] && sourceLinesForTake[0].text)
             ? sourceLinesForTake[0].text.slice(0, 28)
             : (mode === 'free' ? 'Free Record Take' : 'Studio Take');
           addTakeToHistory({
             file: vaultFile,
+            rawFile: vaultRawFile,
             label: `${firstLine}...`,
-            duration: totalKeptDuration
+            duration: totalKeptDuration,
+            freeLines: sourceLinesForTake.map((l) => l.text).filter(Boolean),
+            hookBannerText: hookBannerText || ''
           });
           studioState.takeHistory = TAKE_HISTORY;
         } catch (e) {}
@@ -2433,218 +2467,7 @@ function stitchAllFiveLines(options, cb) {
   }
 }
 
-const ARCHIVED_VAULT_SOURCES = {
-  'vault_ep4_camera_hacks.mp4': {
-    cleanMp4: 'ep4_camera_hacks_clean_source.mp4',
-    artifactOut: 'ep4_camera_hacks_captioned.mp4',
-    duration: 170.0,
-    skipAudioRemaster: true,
-    phrases: [
-      { start: 0.15, end: 2.61, text: "In this video, I'm going to share some hacks and tricks" },
-      { start: 3.08, end: 7.58, text: 'about what I use personally when I shoot a video for my clients.' },
-      { start: 9.98, end: 13.30, text: "So in the previous videos, I'll look back" },
-      { start: 13.30, end: 16.28, text: 'and keep finding myself looking away from the camera —' },
-      { start: 16.64, end: 17.52, text: 'here, there.' },
-      { start: 17.86, end: 20.30, text: "But in this video, it's a little bit better." },
-      { start: 22.17, end: 25.88, text: 'Now, on your camera — the newer phones —' },
-      { start: 26.05, end: 30.44, text: 'they have like three, four, or five lenses.' },
-      { start: 30.92, end: 35.52, text: "And for someone that is not experienced, it's very hard to track" },
-      { start: 36.10, end: 38.42, text: 'which of these lenses you should be staring at.' },
-      { start: 39.25, end: 42.81, text: 'So what I did is very simple —' },
-      { start: 43.14, end: 45.87, text: "it's not expensive: I just got a piece of tape" },
-      { start: 46.21, end: 47.63, text: 'and a corner of a chip bag,' },
-      { start: 48.04, end: 50.77, text: "and I'll just paste it onto the camera" },
-      { start: 51.17, end: 53.32, text: 'that I know is actually filming.' },
-      { start: 54.69, end: 59.46, text: 'So you would just tape that right above the camera' },
-      { start: 59.90, end: 61.94, text: 'that your phone is actually using,' },
-      { start: 62.11, end: 66.27, text: "and therefore what you're doing now is just staring at that bag corner." },
-      { start: 66.66, end: 71.20, text: 'Another thing is, if you find your videos' },
-      { start: 71.20, end: 74.99, text: "to be real milky — like there's a milky film on it —" },
-      { start: 75.51, end: 78.24, text: 'this is your best friend, right?' },
-      { start: 79.14, end: 82.16, text: 'Clean the lens before you start any sort of filming' },
-      { start: 82.67, end: 85.23, text: "so you won't have that milky film" },
-      { start: 85.64, end: 90.32, text: 'or smudges on the corners and stuff like that.' },
-      { start: 91.43, end: 96.67, text: "And it's also particularly helpful for glasses and stuff like that," },
-      { start: 96.95, end: 100.73, text: 'so you would just always keep a bag of these napkins around.' },
-      { start: 101.29, end: 106.85, text: "Some people use microfiber — for me, I don't," },
-      { start: 108.00, end: 112.15, text: 'I just use some napkins.' },
-      { start: 112.60, end: 115.66, text: "Microfiber works better because it doesn't have" },
-      { start: 116.56, end: 119.30, text: 'the lint from the napkins,' },
-      { start: 119.30, end: 122.14, text: 'but what you use is not that important —' },
-      { start: 123.56, end: 126.25, text: 'just be sure to wipe the lens before you start filming.' },
-      { start: 126.40, end: 129.80, text: 'The third thing is, right before you film,' },
-      { start: 129.80, end: 134.22, text: "if you're using your phone, don't forget to turn off" },
-      { start: 134.53, end: 137.40, text: 'notifications or ringtones.' },
-      { start: 137.40, end: 142.27, text: "Because I know from experience — and I'm doing it right now —" },
-      { start: 143.35, end: 145.91, text: 'it takes a lot to film a video,' },
-      { start: 146.43, end: 149.44, text: "and sometimes when you're in the groove," },
-      { start: 149.94, end: 151.80, text: "let's say your friend or your mom calls you —" },
-      { start: 151.80, end: 153.70, text: 'it just totally kills your momentum.' },
-      { start: 154.32, end: 157.50, text: 'So okay, this will be the third video,' },
-      { start: 157.50, end: 160.53, text: 'and after, I believe, in about a week,' },
-      { start: 161.01, end: 164.00, text: 'I will make a video showing you which of these' },
-      { start: 164.00, end: 166.61, text: 'setup changes actually increased the view' },
-      { start: 167.15, end: 169.85, text: 'and viewer retention rate — see you on the next episode.' }
-    ]
-  },
-  'vault_ep3_lighting_angle.mp4': {
-    cleanMp4: 'ep3_lighting_angle_clean_source.mp4',
-    artifactOut: 'ep3_lighting_angle_captioned.mp4',
-    duration: 96.1,
-    skipAudioRemaster: true,
-    phrases: [
-      { start: 0.05, end: 4.75, text: 'Hey guys, this is me with dead-on lighting.' },
-      { start: 5.34, end: 8.41, text: 'And this is me with adjusted 45-degree lighting.' },
-      { start: 8.94, end: 14.06, text: 'So whenever you buy a ring light,' },
-      { start: 14.56, end: 16.73, text: "there's usually a dial" },
-      { start: 17.34, end: 19.11, text: 'for the intensity of the light.' },
-      { start: 19.81, end: 22.80, text: 'You never really want to put it on full blast.' },
-      { start: 22.90, end: 26.25, text: 'I will usually put it at about half —' },
-      { start: 26.69, end: 30.33, text: 'half of the light is usually fine at 2 to 3 feet away.' },
-      { start: 31.27, end: 34.70, text: "Now, the reason why you'll do the 45-degree lighting" },
-      { start: 34.70, end: 37.36, text: 'is that it will prevent glare' },
-      { start: 37.77, end: 40.29, text: 'from your glasses.' },
-      { start: 41.75, end: 45.20, text: 'So right now you can see that there is no glare' },
-      { start: 45.20, end: 47.13, text: 'from the glasses —' },
-      { start: 47.63, end: 49.62, text: 'but if I put it next to the ring light,' },
-      { start: 50.49, end: 54.00, text: 'it will have glare.' },
-      { start: 54.34, end: 57.60, text: 'But not only the glare, right?' },
-      { start: 58.06, end: 60.80, text: "So if you don't wear glasses like me," },
-      { start: 60.80, end: 64.58, text: 'it will also give you a more dynamic shadow on your face,' },
-      { start: 65.28, end: 68.09, text: "and it won't flatten your face as well." },
-      { start: 68.44, end: 70.59, text: 'So if you put the light right in front of your face,' },
-      { start: 71.08, end: 73.70, text: 'it will actually flatten all your features —' },
-      { start: 73.70, end: 76.58, text: 'all your dimensions, shadows, and everything.' },
-      { start: 76.97, end: 79.40, text: "For those of you that don't use a ring light," },
-      { start: 79.40, end: 81.96, text: "if you're just having a window as your light source," },
-      { start: 82.30, end: 84.20, text: "then you'll do exactly the same thing:" },
-      { start: 84.20, end: 86.52, text: "you wouldn't put the phone right in front of the window," },
-      { start: 86.99, end: 90.00, text: "you'll face the window at a 45-degree angle and film there." },
-      { start: 90.40, end: 94.65, text: "So that's another quick video today about positioning your light source." },
-      { start: 94.85, end: 96.05, text: "I'll see you on the next one." }
-    ]
-  },
-  'vault_ep2_wireless_mic.mp4': {
-    cleanMp4: 'ep2_wireless_mic_clean_source.mp4',
-    artifactOut: 'ep2_wireless_mic_captioned.mp4',
-    duration: 136.2,
-    skipAudioRemaster: true,
-    phrases: [
-      { start: 0.15, end: 3.10, text: 'Hey guys, this is me without a mic.' },
-      { start: 3.93, end: 6.10, text: 'And this is me with a mic.' },
-      { start: 6.99, end: 10.65, text: "As you can see, there's a clear distinction" },
-      { start: 11.02, end: 14.39, text: 'between having a Bluetooth microphone and not.' },
-      { start: 14.93, end: 19.43, text: 'Because in the last video, we moved the phone' },
-      { start: 19.77, end: 22.89, text: '2 to 3 feet away from us and zoomed about 1.3x to 1.5x in.' },
-      { start: 23.70, end: 27.33, text: "Naturally, it's going to muffle the voice." },
-      { start: 27.77, end: 33.99, text: "And without a microphone, your phone's mic is going to pick up a lot of echoes —" },
-      { start: 34.54, end: 37.93, text: "it's going to pick up a lot of resonance from the room," },
-      { start: 38.40, end: 41.50, text: "you're going to pick up a baby crying, dogs," },
-      { start: 41.50, end: 44.83, text: "a lot of unnecessary sound that you don't want in your video." },
-      { start: 46.31, end: 50.77, text: 'So you can easily pick up a cheap microphone' },
-      { start: 51.23, end: 55.79, text: 'that is still very good — like this one right here on TikTok Shop.' },
-      { start: 56.20, end: 59.72, text: 'I think it costs about $13.' },
-      { start: 60.18, end: 64.84, text: "So this works perfectly — you don't need a professional microphone" },
-      { start: 66.28, end: 70.11, text: 'to do what you want, or something you want to start off with.' },
-      { start: 70.62, end: 74.88, text: 'Because the TikTok algorithm picks up two things:' },
-      { start: 75.39, end: 79.26, text: 'it likes both good video quality and audio quality.' },
-      { start: 79.84, end: 83.40, text: 'So having good video quality is one thing,' },
-      { start: 83.40, end: 87.85, text: "and it will still view-throttle you if you don't have good sound quality." },
-      { start: 89.32, end: 91.34, text: 'Now, given that said,' },
-      { start: 91.82, end: 96.88, text: 'another important thing about having a mic is that a microphone' },
-      { start: 97.21, end: 99.96, text: 'is how you convey tone, how you convey excitement.' },
-      { start: 101.73, end: 105.63, text: 'So if your audio is not good,' },
-      { start: 106.11, end: 110.10, text: 'then people are really going to have a hard time hearing what you say,' },
-      { start: 110.10, end: 113.50, text: "so they're probably going to scroll past you." },
-      { start: 114.07, end: 118.55, text: "Now we don't want that to happen — especially on an e-commerce site" },
-      { start: 120.15, end: 123.30, text: "like TikTok Shop, and if you're trying to do" },
-      { start: 123.30, end: 126.41, text: "anything e-commerce, you don't want that to happen." },
-      { start: 126.90, end: 130.05, text: 'Okay, this is a quick video about just getting' },
-      { start: 130.61, end: 132.14, text: 'a Bluetooth microphone,' },
-      { start: 132.88, end: 135.75, text: 'so I will see you on the next episode.' }
-    ]
-  },
-  'vault_ep1_camera_distance.mp4': {
-    cleanMp4: 'ep1_camera_clean_source.mp4',
-    artifactOut: 'ep1_camera_distance_captioned.mp4',
-    duration: 104.6,
-    phrases: [
-      { start: 0.20, end: 4.40, text: 'Hey guys, on the first episode I want to start off light.' },
-      { start: 4.74, end: 9.39, text: "I don't want to start you off with 'go get this device'" },
-      { start: 9.82, end: 13.23, text: 'or go get that device from Amazon —' },
-      { start: 13.58, end: 17.17, text: 'because for most of us, this is a starting-off venture.' },
-      { start: 17.41, end: 21.40, text: 'We want to spend the least amount possible to achieve the best result.' },
-      { start: 22.24, end: 26.47, text: 'The first thing we can talk about is camera position:' },
-      { start: 26.95, end: 30.64, text: 'how far you want the camera to be from your face.' },
-      { start: 30.90, end: 35.56, text: "You don't want the camera too close, or else it gets distorted." },
-      { start: 36.79, end: 41.12, text: 'As I get closer to the camera, my nose and forehead get bigger.' },
-      { start: 41.71, end: 46.34, text: 'The best practice is to have your phone at least 2 to 3 feet away.' },
-      { start: 46.83, end: 51.21, text: 'Then depending on your camera model,' },
-      { start: 51.88, end: 54.45, text: "you'll probably zoom to 1.5x to 2x." },
-      { start: 55.19, end: 57.60, text: 'Let me just show you real quick.' },
-      { start: 57.60, end: 60.38, text: "Okay, now we're back." },
-      { start: 60.85, end: 64.18, text: 'Now my face is proportional — not distorted.' },
-      { start: 66.19, end: 70.93, text: 'This is very important on an e-commerce platform' },
-      { start: 71.71, end: 75.25, text: 'because we want to present the product' },
-      { start: 75.79, end: 79.55, text: 'as accurately as possible without any distortion.' },
-      { start: 80.09, end: 84.09, text: 'It is also important to the manufacturer and brand' },
-      { start: 85.05, end: 90.74, text: 'that you represent that their product is best represented.' },
-      { start: 91.33, end: 96.81, text: "And like most of us, we don't want to look distorted as well." },
-      { start: 97.58, end: 100.24, text: 'Hopefully this helped,' },
-      { start: 100.24, end: 104.20, text: "and I'll see you on the next episode." }
-    ]
-  },
-  'vault_frank_intro_bare_minimum.mp4': {
-    cleanMp4: 'latest_take_clean_master.mp4',
-    artifactOut: 'frank_intro_bare_minimum_captioned.mp4',
-    duration: 119.0,
-    phrases: [
-      { start: 0.05, end: 1.25, text: 'Hi guys, my name is Frank.' },
-      { start: 2.09, end: 4.35, text: 'My background is in live events.' },
-      { start: 4.58, end: 7.15, text: 'I design, manufacture, and execute' },
-      { start: 7.15, end: 11.20, text: 'live events for companies you may know' },
-      { start: 11.20, end: 16.23, text: 'like Walmart, Samsung, Huawei, and such.' },
-      { start: 16.82, end: 19.90, text: 'About two years ago, I came in contact' },
-      { start: 20.35, end: 22.74, text: 'with TikTok — they asked me to do' },
-      { start: 22.74, end: 26.51, text: 'a live event for them at CES.' },
-      { start: 27.01, end: 29.01, text: 'So after that, I was asked' },
-      { start: 29.26, end: 32.55, text: 'various times by TikTok and the TikTok team' },
-      { start: 32.99, end: 34.32, text: 'to execute their events.' },
-      { start: 34.32, end: 36.48, text: "Recently, I've been asked by TikTok" },
-      { start: 36.97, end: 39.56, text: 'to produce, execute, and coach' },
-      { start: 39.56, end: 42.07, text: 'some of the brands and sellers' },
-      { start: 42.30, end: 45.82, text: 'that want to do TikTok LIVE.' },
-      { start: 46.19, end: 49.04, text: "I thought it'd be a great opportunity" },
-      { start: 49.28, end: 51.44, text: 'for me to share my knowledge' },
-      { start: 51.76, end: 55.54, text: 'and share my experiences with live recording' },
-      { start: 55.87, end: 58.20, text: 'and live events as such.' },
-      { start: 58.20, end: 59.90, text: 'The purpose for this channel' },
-      { start: 59.90, end: 62.39, text: 'is that, as you can see,' },
-      { start: 62.59, end: 64.48, text: 'this is a very bare-minimum setup.' },
-      { start: 64.76, end: 68.48, text: "I don't want to be in a studio setting." },
-      { start: 68.68, end: 71.33, text: 'I want to be, as many creators are,' },
-      { start: 71.91, end: 74.07, text: 'a very bare-minimum setup' },
-      { start: 74.40, end: 75.82, text: 'without a studio setting.' },
-      { start: 75.82, end: 77.64, text: 'All I have right now' },
-      { start: 77.89, end: 79.33, text: 'is just my phone,' },
-      { start: 79.56, end: 80.87, text: 'which is a Google Pixel 7 Pro,' },
-      { start: 81.14, end: 83.85, text: 'and just a ring light that I got online.' },
-      { start: 84.12, end: 86.80, text: 'So very bare minimum, as you can see —' },
-      { start: 86.80, end: 89.43, text: 'no makeup, no hair done.' },
-      { start: 89.66, end: 91.74, text: 'I want to start from the ground floor.' },
-      { start: 92.26, end: 94.00, text: 'I want to start from zero.' },
-      { start: 94.00, end: 96.61, text: 'And with every video, I will improve' },
-      { start: 97.02, end: 100.09, text: 'and share these improvements with you guys' },
-      { start: 100.54, end: 103.53, text: 'so you can also see the changes' },
-      { start: 103.71, end: 106.63, text: 'and also see the progression' },
-      { start: 106.92, end: 109.87, text: 'of how you could start from' },
-      { start: 110.05, end: 112.42, text: 'just this bare-minimum setup' },
-      { start: 112.67, end: 114.50, text: 'to a studio production-like setting.' },
-      { start: 114.89, end: 116.94, text: "Okay, I'm glad to have you guys watching," },
-      { start: 117.17, end: 118.95, text: "and I'll see you in the next video." }
-    ]
-  }
-};
+const ARCHIVED_VAULT_SOURCES = {};
 
 let activeVaultFile = null;
 
@@ -3097,11 +2920,23 @@ const server = http.createServer((req, res) => {
         const safeFile = path.basename(String(file || ''));
         const fullVault = path.join(scratchDir, safeFile);
         if (safeFile && fs.existsSync(fullVault)) {
-          activeVaultFile = safeFile;
+          activeVaultFile = null;
           fs.copyFileSync(fullVault, path.join(scratchDir, 'latest_take_mastered.mp4'));
           const found = TAKE_HISTORY.find((t) => t.file === safeFile);
-          const analyzed = analyzeVideoContentForHook(getActiveTranscriptForHookAnalysis());
-          studioState.hookBannerText = analyzed.primaryHook;
+          if (found && found.rawFile) {
+            const fullRaw = path.join(scratchDir, path.basename(String(found.rawFile)));
+            if (fs.existsSync(fullRaw)) {
+              try {
+                fs.copyFileSync(fullRaw, path.join(scratchDir, 'latest_take.webm'));
+              } catch (e) {}
+            }
+          }
+          const restoredFreeLines = (found && Array.isArray(found.freeLines)) ? found.freeLines : [];
+          studioState.freeRecordLines = restoredFreeLines;
+          studioState.lastWhisperPhrases = [];
+          const analyzed = analyzeVideoContentForHook(restoredFreeLines.map((t) => ({ text: t })));
+          const chosenHook = (found && found.hookBannerText) ? found.hookBannerText : analyzed.primaryHook;
+          studioState.hookBannerText = chosenHook;
           studioState.hookSuggestions = analyzed.suggestions;
           const url = `/takes/${safeFile}?t=${Date.now()}`;
           studioState.masteredMp4 = url;
@@ -3110,7 +2945,8 @@ const server = http.createServer((req, res) => {
             ok: true,
             masteredMp4: url,
             finalDuration: found ? found.duration : null,
-            generatedHook: analyzed.primaryHook,
+            freeLines: restoredFreeLines,
+            generatedHook: chosenHook,
             hookSuggestions: analyzed.suggestions,
             takeHistory: TAKE_HISTORY
           });
@@ -3130,15 +2966,8 @@ const server = http.createServer((req, res) => {
       try {
         const msg = JSON.parse(body || '{}');
         if (msg.patch && typeof msg.patch === 'object') {
-          if (msg.patch.episodeId && msg.patch.episodeId !== currentEpisodeId) {
-            currentEpisodeId = msg.patch.episodeId;
-            const foundEp = EPISODES.find((e) => e.id === currentEpisodeId) || EPISODES[0];
-            SCRIPT_LINES = episodeToScriptLines(foundEp);
-            studioState.lines = getLineBankStatus();
-          }
-          if (typeof msg.patch.customScriptText === 'string' && msg.patch.customScriptText.trim()) {
-            const foundEp = EPISODES.find((e) => e.id === currentEpisodeId) || EPISODES[0];
-            SCRIPT_LINES = parseCustomScriptLines(msg.patch.customScriptText, foundEp);
+          if (typeof msg.patch.customScriptText === 'string') {
+            SCRIPT_LINES = parseCustomScriptLines(msg.patch.customScriptText);
             studioState.lines = getLineBankStatus();
           }
           Object.assign(studioState, msg.patch);
@@ -3301,6 +3130,10 @@ const server = http.createServer((req, res) => {
       const hookBannerY = Number(req.headers['x-hook-y'] || studioState.hookBannerY || 335);
       const visualFormat = req.headers['x-format'] || studioState.visualFormat || 'illustration';
       const wpm = elapsed > 0 ? Math.round((words / elapsed) * 60) : 0;
+
+      // Always clear any previous take's transcript before processing a new take
+      studioState.freeRecordLines = [];
+      studioState.lastWhisperPhrases = [];
 
       let freeLines = [];
       try {
@@ -3474,7 +3307,8 @@ const server = http.createServer((req, res) => {
     const mode = req.headers['x-mode'] || 'full';
     const visualFormat = req.headers['x-format'] || studioState.visualFormat || 'illustration';
 
-    let freeLines = studioState.freeRecordLines || [];
+    const hasFreeHeader = typeof req.headers['x-free-lines'] !== 'undefined';
+    let freeLines = hasFreeHeader ? [] : (studioState.freeRecordLines || []);
     try {
       const rawFree = req.headers['x-free-lines'];
       if (rawFree) {
@@ -3485,7 +3319,7 @@ const server = http.createServer((req, res) => {
 
     const runMasterTakeWithLines = (resolvedLines) => {
       freeLines = Array.isArray(resolvedLines) ? resolvedLines.filter(Boolean) : [];
-      if (mode === 'free' && freeLines.length > 0) {
+      if (mode === 'free') {
         studioState.freeRecordLines = freeLines;
       }
       const linesForAnalysis = (mode === 'free' && !activeVaultFile)
@@ -3583,7 +3417,7 @@ const server = http.createServer((req, res) => {
       );
     };
 
-    if (mode === 'free' && freeLines.length === 0 && !activeVaultFile && fs.existsSync(path.join(scratchDir, 'latest_take.webm'))) {
+    if (mode === 'free' && !hasFreeHeader && freeLines.length === 0 && !activeVaultFile && fs.existsSync(path.join(scratchDir, 'latest_take.webm'))) {
       transcribeAudioFileWithWindowsSpeech(path.join(scratchDir, 'latest_take.webm'), (wavLines) => {
         runMasterTakeWithLines(wavLines);
       });
@@ -3614,6 +3448,8 @@ const server = http.createServer((req, res) => {
       } catch (e) {}
 
       activeVaultFile = null;
+      studioState.freeRecordLines = [];
+      studioState.lastWhisperPhrases = [];
       const preset = req.headers['x-preset'] || 'auto';
       const trimSilence = req.headers['x-trim'] !== '0';
       const coldOpenTrim = req.headers['x-cold-open'] !== '0';
@@ -3622,40 +3458,52 @@ const server = http.createServer((req, res) => {
       const avDelayMs = Number(req.headers['x-av-delay-ms'] || 0);
       const burnCaptions = req.headers['x-captions'] !== '0';
       const burnHookBanner = req.headers['x-burn-hook'] !== '0';
-      const hookBannerText = decodeURIComponent(req.headers['x-hook-banner'] || studioState.hookBannerText || 'Creator Studio Tip').trim();
+      const rawHookHeader = decodeURIComponent(req.headers['x-hook-banner'] || '').trim();
       const hookBannerX = Number(req.headers['x-hook-x'] || studioState.hookBannerX || 540);
       const hookBannerY = Number(req.headers['x-hook-y'] || studioState.hookBannerY || 335);
 
-      processSingleTake(
-        {
-          inFile: importedFile,
-          outFile: 'latest_take_mastered.mp4',
-          preset,
-          trimSilence,
-          coldOpenTrim,
-          dynamicZoom,
-          musicBed,
-          avDelayMs,
-          burnCaptions,
-          burnHookBanner,
-          hookBannerText,
-          hookBannerX,
-          hookBannerY,
-          saveToVault: true,
-          mode: 'full',
-          visualFormat: 'webcam'
-        },
-        (err, mp4Url, finalDur) => {
-          return sendJson(res, err ? 500 : 200, {
-            ok: !err,
-            masteredMp4: mp4Url || null,
-            finalDuration: finalDur || null,
-            generatedHook: hookBannerText,
-            takeHistory: TAKE_HISTORY,
-            error: err ? String(err.message || err) : null
-          });
-        }
-      );
+      transcribeAudioFileWithWindowsSpeech(fullImported, (wavLines) => {
+        const freeLines = Array.isArray(wavLines) ? wavLines.filter(Boolean) : [];
+        studioState.freeRecordLines = freeLines;
+        const analyzed = analyzeVideoContentForHook(freeLines.map((t) => ({ text: t })));
+        const hookBannerText = rawHookHeader || analyzed.primaryHook || '';
+        studioState.hookBannerText = hookBannerText;
+        studioState.hookSuggestions = analyzed.suggestions;
+
+        processSingleTake(
+          {
+            inFile: importedFile,
+            outFile: 'latest_take_mastered.mp4',
+            preset,
+            trimSilence,
+            coldOpenTrim,
+            dynamicZoom,
+            musicBed,
+            avDelayMs,
+            burnCaptions,
+            burnHookBanner,
+            hookBannerText,
+            hookBannerX,
+            hookBannerY,
+            saveToVault: true,
+            mode: 'free',
+            freeLines,
+            visualFormat: 'webcam'
+          },
+          (err, mp4Url, finalDur) => {
+            return sendJson(res, err ? 500 : 200, {
+              ok: !err,
+              freeLines,
+              masteredMp4: mp4Url || null,
+              finalDuration: finalDur || null,
+              generatedHook: hookBannerText,
+              hookSuggestions: analyzed.suggestions,
+              takeHistory: TAKE_HISTORY,
+              error: err ? String(err.message || err) : null
+            });
+          }
+        );
+      });
     });
     return;
   }
