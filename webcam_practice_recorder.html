@@ -87,8 +87,8 @@
       align-items: center;
       background: var(--bg-panel);
       border-bottom: 1px solid var(--border-hairline);
-      padding: 0 14px;
-      gap: 12px;
+      padding: 0 10px;
+      gap: 8px;
       z-index: 30;
     }
 
@@ -97,7 +97,22 @@
     .sync-actions {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
+    }
+
+    .header-left {
+      flex-shrink: 0;
+    }
+
+    .header-center {
+      flex: 0 1 auto;
+      min-width: 0;
+    }
+
+    .sync-actions {
+      flex: 1 1 auto;
+      min-width: 0;
+      justify-content: flex-end;
     }
 
     .role-tabs {
@@ -133,12 +148,13 @@
       color: var(--text-primary);
       border: 1px solid var(--border-strong);
       border-radius: 6px;
-      padding: 5px 9px;
+      padding: 4px 8px;
       font-family: var(--font-ui);
-      font-size: 12px;
+      font-size: 11.5px;
       font-weight: 500;
       cursor: pointer;
       outline: none;
+      flex-shrink: 0;
     }
 
     .top-select:focus {
@@ -148,15 +164,18 @@
     .tally-status {
       display: flex;
       align-items: center;
-      gap: 7px;
+      gap: 6px;
       font-weight: 600;
-      font-size: 12px;
+      font-size: 11.5px;
       color: var(--text-primary);
       background: var(--bg-elevated);
-      padding: 4px 10px;
+      padding: 4px 9px;
       border-radius: 6px;
       border: 1px solid var(--border-hairline);
       white-space: nowrap;
+      flex: 0 1 160px;
+      min-width: 72px;
+      overflow: hidden;
     }
 
     .tally-dot {
@@ -184,13 +203,14 @@
       font-weight: 600;
       font-variant-numeric: tabular-nums;
       font-feature-settings: "zero" 1;
-      font-size: 12.5px;
+      font-size: 12px;
       letter-spacing: -0.02em;
       background: var(--bg-stage);
-      padding: 4px 10px;
+      padding: 4px 8px;
       border-radius: 6px;
       border: 1px solid var(--border-hairline);
       white-space: nowrap;
+      flex-shrink: 0;
     }
 
     .lan-url-pill {
@@ -209,7 +229,7 @@
       background: var(--bg-elevated);
       color: var(--text-secondary);
       border: 1px solid var(--border-strong);
-      padding: 5px 10px;
+      padding: 4px 9px;
       border-radius: 6px;
       font-family: var(--font-ui);
       font-size: 11.5px;
@@ -217,6 +237,7 @@
       cursor: pointer;
       transition: all 0.12s ease;
       white-space: nowrap;
+      flex-shrink: 0;
     }
 
     .btn-popout:hover {
@@ -298,14 +319,14 @@
       color: var(--text-secondary);
       border: 1px solid var(--border-strong);
       border-radius: 6px;
-      padding: 4px 10px;
+      padding: 4px 8px;
       font-family: var(--font-ui);
-      font-size: 11.5px;
+      font-size: 11px;
       font-weight: 600;
       cursor: pointer;
       display: inline-flex;
       align-items: center;
-      gap: 6px;
+      gap: 5px;
       transition: all 0.12s ease;
       white-space: nowrap;
     }
@@ -591,8 +612,11 @@
     .module-header-left {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 5px;
       min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .module-grip-dots {
@@ -613,10 +637,15 @@
     .module-ctrl-bar {
       display: flex;
       align-items: center;
-      gap: 3px;
+      gap: 2px;
       flex-shrink: 0;
       position: relative;
       z-index: 5;
+    }
+
+    body.wizard-guided-active .mod-ctrl-btn[data-mod-action="up"],
+    body.wizard-guided-active .mod-ctrl-btn[data-mod-action="down"] {
+      display: none;
     }
 
     .mod-ctrl-btn {
@@ -624,11 +653,11 @@
       color: var(--text-secondary);
       border: 1px solid var(--border-strong);
       border-radius: 4px;
-      min-width: 21px;
-      min-height: 21px;
-      padding: 1px 5px;
+      min-width: 19px;
+      min-height: 19px;
+      padding: 1px 4px;
       font-family: var(--font-mono);
-      font-size: 10.5px;
+      font-size: 10px;
       font-weight: 700;
       cursor: pointer;
       line-height: 1.2;
@@ -1571,7 +1600,7 @@
     <div class="sync-actions">
       <div id="tallyBox" class="tally-status" title="Live Studio Status">
         <span class="tally-dot"></span>
-        <span id="statusPrompt" style="max-width:210px;overflow:hidden;text-overflow:ellipsis;">STANDBY • Free Record Mode</span>
+        <span id="statusPrompt" style="max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">STANDBY • Free Record Mode</span>
       </div>
       <span id="timerDisplay" class="timer-text">00:00.0 • FREE</span>
 
@@ -1581,7 +1610,7 @@
 
       <div class="view-dropdown-wrap">
         <button id="viewMenuToggleBtn" type="button" class="btn-popout" title="Workspace panels, layout modes, script editor & software updates">
-          View &amp; Panels ▾
+          View ▾
         </button>
         <div id="viewDropdownMenu" class="view-dropdown-menu">
           <div class="view-menu-section-label">View Mode</div>
@@ -2577,7 +2606,7 @@
         }
       }
       if (zoomBadgeLabel) {
-        zoomBadgeLabel.textContent = hwZoomSupported ? `HW ${zTxt}` : "1.0x Optical";
+        zoomBadgeLabel.textContent = hwZoomSupported ? `HW ${zTxt}` : "1.0x";
       }
     }
     if (punchZoomBtn) punchZoomBtn.addEventListener("click", cyclePunchZoom);
@@ -7419,6 +7448,7 @@
 
     function renderWizardUI() {
       const cfg = WIZARD_STEP_CONFIG[currentWizardStep] || WIZARD_STEP_CONFIG[1];
+      document.body.classList.toggle("wizard-guided-active", Boolean(wizardMode));
 
       wizardStepBtns.forEach((btn) => {
         const s = Number(btn.getAttribute("data-wizard-step"));
